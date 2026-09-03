@@ -1,937 +1,334 @@
-import base64
-import io
-import json
+import os, io, json, base64, pickle, sqlite3, uuid
 from datetime import datetime
-
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(
-    page_title="Gestão Almoxarifado | Inventário Rotativo",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title='Gestão Almoxarifado | Inventário Rotativo', page_icon='📦', layout='wide', initial_sidebar_state='expanded')
+DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
 
-# ============================================================
-# CONFIGURAÇÃO VISUAL / TEXTUAL
-# ============================================================
-DEFAULT_CONFIG = {
-    "theme_mode": "Dark",
-    "font_family": "Arial",
-    "font_size": 16,
-    "title_size": 31,
-    "sidebar_width": 250,
-    "sidebar_align": "left",
-    "sidebar_font_size": 12,
-    "sidebar_item_height": 42,
-    "sidebar_logo_width": 190,
-    "sidebar_logo_height": 70,
-    "sidebar_logo_align": "left",
-    "primary_color": "#FFD63B",
-    "primary_hover": "#F7C928",
-    "background_dark": "#080B0A",
-    "panel_dark": "#101614",
-    "panel_dark_2": "#141A17",
-    "border_dark": "#2B3732",
-    "text_dark": "#F4F5F2",
-    "muted_dark": "#A9B1AC",
-    "background_clean": "#F5F6F4",
-    "panel_clean": "#FFFFFF",
-    "panel_clean_2": "#F0F2EF",
-    "border_clean": "#D8DDD9",
-    "text_clean": "#161A18",
-    "muted_clean": "#626B66",
-    "app_title": "GESTÃO ALMOXARIFADO",
-    "app_subtitle": "01 · ACURÁCIA DE ESTOQUE  |  Inventário Rotativo",
-    "sidebar_subtitle": "SISTEMA OPERACIONAL DE ESTOQUE",
-    "footer_text": "Sistema Operacional • Almoxarifado",
-    "menu_label": "MENU",
-    "dashboard_label": "DASHBOARD",
-    "inventory_label": "INVENTÁRIO ROTATIVO",
-    "database_label": "BANCO DE DADOS",
-    "register_label": "REGISTRO",
-    "settings_label": "CONFIGURAÇÕES",
-    "dashboard_title": "Dashboard",
-    "inventory_title": "Inventário Rotativo",
-    "database_title": "Banco de Dados",
-    "register_title": "Registro",
-    "settings_title": "Configurações",
-    "dashboard_subtitle": "Visão geral dos indicadores do estoque.",
-    "inventory_subtitle": "Controle e execução dos inventários rotativos.",
-    "database_subtitle": "Importação, tratamento e classificação da base de estoque.",
-    "register_subtitle": "Histórico dos inventários e das contagens realizadas.",
-    "new_inventory_text": "＋ Novo Inventário",
-    "process_database_text": "⚙ Processar e atualizar banco",
-    "export_database_text": "↓ Exportar banco consolidado (CSV)",
-    "upload_cadastro_label": "1. Relatório CADASTROS",
-    "upload_endereco_label": "2. Relatório ENDEREÇO",
-    "address_title": "3. Endereços aptos para contabilizar saldo",
-    "database_consolidated_title": "4. Banco consolidado",
-    "inventory_default_blind": False,
-    "inventory_manager_profile": "Gestor",
-    "show_footer": True,
+DEFAULT={
+ 'theme':'Dark','font':'Arial','font_size':16,'title_size':31,
+ 'primary':'#FFD63B','hover':'#F7C928','icon_color':'#FFD63B','dark_bg':'#080B0A','dark_panel':'#101614','dark_panel2':'#141A17','dark_border':'#2B3732','dark_text':'#F4F5F2','dark_muted':'#A9B1AC',
+ 'clean_bg':'#F5F6F4','clean_panel':'#FFFFFF','clean_panel2':'#F0F2EF','clean_border':'#D8DDD9','clean_text':'#161A18','clean_muted':'#626B66',
+ 'title':'GESTÃO ALMOXARIFADO','subtitle':'01 · ACURÁCIA DE ESTOQUE  |  Inventário Rotativo','sidebar_sub':'SISTEMA OPERACIONAL DE ESTOQUE','menu':'MENU',
+ 'dash':'DASHBOARD','inv':'INVENTÁRIO ROTATIVO','db':'BANCO DE DADOS','reg':'REGISTRO','settings':'CONFIGURAÇÕES',
+ 'logo_w':190,'logo_h':70,'logo_align':'center','logo_top':-10,'sub_top':0,'menu_top':0,'sidebar_align':'left','sidebar_font':12,'item_h':42,'gap':8,'dash_top':0,'inv_top':0,'db_top':0,'reg_top':0,'settings_top':0,'show_footer':True,
+ 'blind_default':False,'dashboard_title':'Dashboard','inventory_title':'Inventário Rotativo','database_title':'Banco de Dados','register_title':'Registro','dashboard_subtitle':'Visão geral dos indicadores do estoque.','inventory_subtitle':'Controle e execução dos inventários rotativos.','database_subtitle':'Importação, tratamento e classificação da base de estoque.','register_subtitle':'Histórico dos inventários e das contagens realizadas.'
 }
 
-
-def init_config():
-    if "ui_config" not in st.session_state:
-        st.session_state.ui_config = DEFAULT_CONFIG.copy()
-    if "logo_bytes" not in st.session_state:
-        st.session_state.logo_bytes = None
-    if "logo_name" not in st.session_state:
-        st.session_state.logo_name = ""
-
-
-init_config()
-config = st.session_state.ui_config
-
-# ============================================================
-# HELPERS VISUAIS
-# ============================================================
-def logo_data_uri():
-    if not st.session_state.logo_bytes:
-        return None
-    mime = "image/png"
-    name = st.session_state.logo_name.lower()
-    if name.endswith((".jpg", ".jpeg")):
-        mime = "image/jpeg"
-    elif name.endswith(".webp"):
-        mime = "image/webp"
-    elif name.endswith(".svg"):
-        mime = "image/svg+xml"
-    encoded = base64.b64encode(st.session_state.logo_bytes).decode("utf-8")
-    return f"data:{mime};base64,{encoded}"
-
-
-def inject_css():
-    dark = config["theme_mode"] == "Dark"
-    if dark:
-        bg, panel, panel2, border, text, muted = (
-            config["background_dark"], config["panel_dark"], config["panel_dark_2"],
-            config["border_dark"], config["text_dark"], config["muted_dark"]
-        )
-        sidebar_bg = bg
-        input_bg = panel
-    else:
-        bg, panel, panel2, border, text, muted = (
-            config["background_clean"], config["panel_clean"], config["panel_clean_2"],
-            config["border_clean"], config["text_clean"], config["muted_clean"]
-        )
-        sidebar_bg = config["panel_clean"]
-        input_bg = config["panel_clean"]
-
-    primary = config["primary_color"]
-    hover = config["primary_hover"]
-    font = config["font_family"]
-    font_size = config["font_size"]
-    title_size = config["title_size"]
-    sidebar_width = config["sidebar_width"]
-    sidebar_align = config["sidebar_align"]
-    logo_align = config["sidebar_logo_align"]
-
-    st.markdown(
-        f"""
-<style>
-:root {{
-    --app-primary: {primary}; --app-primary-hover: {hover}; --app-bg: {bg};
-    --app-panel: {panel}; --app-panel-2: {panel2}; --app-border: {border};
-    --app-text: {text}; --app-muted: {muted}; --app-font: {font};
-    --app-font-size: {font_size}px;
-}}
-html, body, [class*="css"], .stApp {{ font-family: var(--app-font), Arial, sans-serif !important; font-size: var(--app-font-size); }}
-.stApp {{ background: var(--app-bg); color: var(--app-text); }}
-[data-testid="stHeader"] {{ background: var(--app-bg); }}
-
-/* IMPORTANTE: não forçar display/posição da sidebar. O Streamlit controla o recolhimento. */
-section[data-testid="stSidebar"] {{
-    background: {sidebar_bg}; border-right: 1px solid var(--app-border);
-    z-index: 9999 !important;
-}}
-section[data-testid="stSidebar"] > div {{ padding-top: 1rem; }}
-
-/* Botão nativo de abrir/recolher: permanece preso à borda da janela */
-[data-testid="stSidebarCollapsedControl"] {{
-    position: fixed !important; left: 0.35rem !important; top: 0.75rem !important;
-    z-index: 100000 !important; display: flex !important; visibility: visible !important;
-}}
-[data-testid="stSidebarCollapseButton"] {{ z-index: 100000 !important; }}
-
-.logo-area {{ min-height: 82px; display:flex; align-items:center; justify-content:{logo_align};
-    padding: 6px 8px 12px 8px; margin-bottom: 8px; overflow:hidden; }}
-.logo-area img {{ width:{config['sidebar_logo_width']}px; height:{config['sidebar_logo_height']}px;
-    max-width:100%; object-fit:contain; object-position:center; display:block; }}
-.logo-placeholder {{ color:var(--app-muted); font-size:12px; line-height:1.4; padding:10px 8px;
-    border:1px dashed var(--app-border); border-radius:8px; width:100%; text-align:center; }}
-.sidebar-sub {{ color:var(--app-muted); font-size:11px; margin:0 7px 22px 7px; line-height:1.35;
-    text-align:{sidebar_align}; }}
-.section-label {{ color:var(--app-primary); font-size:12px; font-weight:800; letter-spacing:.7px;
-    margin:10px 7px 8px 7px; text-align:{sidebar_align}; }}
-section[data-testid="stSidebar"] .stButton > button {{ width:100%; border:0; background:transparent;
-    color:var(--app-muted); text-align:{sidebar_align}; font-weight:800; border-radius:9px;
-    min-height:{config['sidebar_item_height']}px; font-size:{config['sidebar_font_size']}px; }}
-section[data-testid="stSidebar"] .stButton > button:hover {{ background:var(--app-panel-2); color:var(--app-text); }}
-section[data-testid="stSidebar"] .stButton > button[kind="primary"] {{ background:var(--app-primary); color:#11130F; }}
-
-.main-title {{ font-size:{title_size}px; line-height:1.1; font-weight:800; margin:5px 0 2px 0; color:var(--app-text); }}
-.main-subtitle {{ color:var(--app-muted); font-size:14px; margin-bottom:22px; }}
-[data-testid="stMetric"] {{ background:var(--app-panel); border:1px solid var(--app-border); border-radius:14px; padding:17px 19px; min-height:105px; }}
-[data-testid="stMetricLabel"] p {{ color:var(--app-muted)!important; font-size:11px!important; font-weight:800!important; letter-spacing:.5px; text-transform:uppercase; }}
-[data-testid="stMetricValue"] {{ color:var(--app-text); }}
-div[data-testid="stVerticalBlockBorderWrapper"] {{ background:var(--app-panel); border-color:var(--app-border)!important; border-radius:14px; }}
-.stButton > button, .stDownloadButton > button {{ border-radius:8px; font-weight:800; border:1px solid var(--app-border); background:var(--app-panel-2); color:var(--app-text); }}
-.stButton > button:hover, .stDownloadButton > button:hover {{ border-color:var(--app-primary); color:var(--app-primary); }}
-.stButton > button[kind="primary"] {{ background:var(--app-primary); color:#10120F; border-color:var(--app-primary); }}
-.stButton > button[kind="primary"]:hover {{ background:var(--app-primary-hover); color:#10120F; }}
-.stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div,
-.stMultiSelect div[data-baseweb="select"] > div, .stTextArea textarea {{ background:{input_bg}!important; color:var(--app-text)!important; border-color:var(--app-border)!important; }}
-label, .stMarkdown p, .stCaption, .stRadio label, .stCheckbox label {{ color:var(--app-text)!important; }}
-[data-testid="stDataFrame"] {{ border:1px solid var(--app-border); border-radius:10px; overflow:hidden; }}
-button[data-baseweb="tab"] {{ color:var(--app-muted)!important; font-weight:700; }}
-button[data-baseweb="tab"][aria-selected="true"] {{ color:var(--app-primary)!important; }}
-[role="tablist"] {{ border-bottom:1px solid var(--app-border); }}
-hr {{ border-color:var(--app-border)!important; }}
-.settings-card {{ background:var(--app-panel); border:1px solid var(--app-border); border-radius:14px; padding:18px; margin-bottom:12px; }}
-.small-note {{ color:var(--app-muted); font-size:12px; }}
-.footer-note {{ position:fixed; bottom:12px; left:18px; color:var(--app-muted); opacity:.65; font-size:10px; line-height:1.35; }}
-.status-pill {{ display:inline-block; padding:4px 9px; border-radius:20px; border:1px solid var(--app-border); font-size:11px; font-weight:800; }}
-</style>
-""", unsafe_allow_html=True)
-
-
-inject_css()
-
-# ============================================================
-# DADOS / NÚMEROS
-# ============================================================
-def normalize_code(series):
-    return (series.astype("string").fillna("").str.strip().str.replace(r"\.0$", "", regex=True).str.zfill(8))
-
-
-def normalize_address(series):
-    return (series.astype("string").fillna("").str.strip().str.replace(r"\s+", " ", regex=True).str.upper())
-
-
-def read_excel_file(uploaded_file, sheet_name=0):
-    uploaded_file.seek(0)
-    return pd.read_excel(uploaded_file, sheet_name=sheet_name, header=1, dtype=str)
-
-
-def parse_locale_number(value):
-    """Converte números BR/Excel sem apagar a casa decimal.
-    Exemplos: 613,48 -> 613.48 | 613.48 -> 613.48 | 1.234,56 -> 1234.56.
-    """
-    if value is None or pd.isna(value):
-        return 0.0
-    s = str(value).strip().replace("R$", "").replace(" ", "")
-    if not s:
-        return 0.0
-    neg = s.startswith("-")
-    s = s.lstrip("+-")
-    if "," in s and "." in s:
-        # O último separador é o decimal.
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    elif "," in s:
-        # No ERP/relatório brasileiro, vírgula é decimal.
-        s = s.replace(",", ".")
-    elif "." in s:
-        # Quando o Excel entrega a célula numérica como texto, ponto é separador decimal.
-        # Não removemos o ponto: quantidades como 110.135 devem continuar 110,135.
-        pass
-    try:
-        out = float(s)
-        return -out if neg else out
-    except Exception:
-        return 0.0
-
-
-def numeric_series(series):
-    return series.apply(parse_locale_number).astype(float)
-
-
-def format_number(value, decimals=3):
-    try:
-        return f"{float(value):,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "0"
-
-
-def format_brl(value):
-    try:
-        return f"R$ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "R$ 0,00"
-
-
-def build_database(cad_df, end_df, eligible_addresses):
-    cad = cad_df.iloc[:, [1, 2, 7]].copy()
-    cad.columns = ["codigo", "descricao", "ultimo_preco"]
-    cad["codigo"] = normalize_code(cad["codigo"])
-    cad["descricao"] = cad["descricao"].astype("string").fillna("").str.strip()
-    cad["ultimo_preco"] = numeric_series(cad["ultimo_preco"])
-    cad = cad.drop_duplicates("codigo", keep="last")
-
-    end = end_df.iloc[:, [0, 3, 7]].copy()
-    end.columns = ["codigo", "endereco", "quantidade"]
-    end["codigo"] = normalize_code(end["codigo"])
-    end["endereco"] = normalize_address(end["endereco"])
-    end["quantidade"] = numeric_series(end["quantidade"])
-    end = end.groupby(["codigo", "endereco"], as_index=False)["quantidade"].sum()
-
-    eligible = set(normalize_address(pd.Series(eligible_addresses)).tolist())
-    end["apto"] = end["endereco"].isin(eligible)
-    apto = end[end["apto"]].copy()
-    saldo_prod = apto.groupby("codigo", as_index=False)["quantidade"].sum().rename(columns={"quantidade": "saldo_apto"})
-
-    db = cad.merge(saldo_prod, on="codigo", how="left")
-    db["saldo_apto"] = db["saldo_apto"].fillna(0.0)
-    db["valor_total"] = db["saldo_apto"] * db["ultimo_preco"]
-    active = db["saldo_apto"] > 0
-    db["classificacao_r_un"] = pd.NA
-    db["classificacao_r_total"] = pd.NA
-    db.loc[active, "classificacao_r_un"] = db.loc[active, "ultimo_preco"].rank(method="first", ascending=False).astype(int)
-    db.loc[active, "classificacao_r_total"] = db.loc[active, "valor_total"].rank(method="first", ascending=False).astype(int)
-    db = db.sort_values(["classificacao_r_total", "codigo"], na_position="last").reset_index(drop=True)
-    return db, end
-
-
-# ============================================================
-# INVENTÁRIO ROTATIVO
-# ============================================================
-def next_document_id():
-    today = datetime.now().strftime("%d%m%Y")
-    seq = 1
-    for inv in st.session_state.inventories.values():
-        if inv.get("documento", "").startswith(today + "-"):
-            try:
-                seq = max(seq, int(inv["documento"].split("-")[-1]) + 1)
-            except Exception:
-                pass
-    return f"{today}-{seq:03d}"
-
-
-def ensure_inventory_state():
-    if "inventories" not in st.session_state:
-        st.session_state.inventories = {}
-    if "product_count_cycles" not in st.session_state:
-        st.session_state.product_count_cycles = {}
-
-
-def current_cycle(db):
-    active_codes = db.loc[db["saldo_apto"] > 0, "codigo"].astype(str).tolist()
-    if not active_codes:
-        return 1
-    counts = [int(st.session_state.product_count_cycles.get(c, 0)) for c in active_codes]
-    return min(counts) + 1
-
-
-def select_rotative_products(db, quantity):
-    """Seleciona N produtos distintos, metade por R$ UN e metade por R$ TOTAL.
-    Produtos com menor número de ciclos têm prioridade. Em empate, usa os rankings.
-    """
-    quantity = max(1, int(quantity))
-    work = db[db["saldo_apto"] > 0].copy()
-    if work.empty:
-        return work
-    work["cycle_count"] = work["codigo"].astype(str).map(lambda c: int(st.session_state.product_count_cycles.get(c, 0)))
-    min_cycle = int(work["cycle_count"].min())
-    work = work[work["cycle_count"] == min_cycle].copy()
-    if work.empty:
-        return work
-
-    unit_rank = work.sort_values(["classificacao_r_un", "codigo"], na_position="last")
-    total_rank = work.sort_values(["classificacao_r_total", "codigo"], na_position="last")
-    target_unit = quantity // 2
-    target_total = quantity - target_unit
-    selected = []
-
-    for code in unit_rank["codigo"].tolist():
-        if len(selected) >= target_unit:
-            break
-        if code not in selected:
-            selected.append(code)
-
-    for code in total_rank["codigo"].tolist():
-        if len([x for x in selected if x in set(unit_rank.head(target_unit)["codigo"])]) >= target_unit and len(selected) >= target_unit + target_total:
-            break
-        if code not in selected:
-            selected.append(code)
-        if len(selected) >= target_unit + target_total:
-            break
-
-    if len(selected) < quantity:
-        combined = pd.concat([unit_rank, total_rank]).drop_duplicates("codigo")
-        for code in combined["codigo"].tolist():
-            if code not in selected:
-                selected.append(code)
-            if len(selected) >= quantity:
-                break
-
-    return db[db["codigo"].isin(selected)].copy().sort_values("codigo")
-
-
-def expand_products_to_positions(selected_products, positions_df):
-    rows = []
-    for _, p in selected_products.iterrows():
-        pos = positions_df[(positions_df["codigo"] == p["codigo"]) & (positions_df["apto"])]
-        for _, r in pos.iterrows():
-            rows.append({
-                "codigo": p["codigo"],
-                "descricao": p["descricao"],
-                "endereco": r["endereco"],
-                "qtd_sistema": float(r["quantidade"]),
-                "classificacao_r_un": int(p["classificacao_r_un"]),
-                "classificacao_r_total": int(p["classificacao_r_total"]),
-                "primeira_contagem": None,
-                "comentario_1": "SC",
-                "segunda_contagem": None,
-                "comentario_2": "SC",
-                "terceira_contagem": None,
-                "comentario_3": "SC",
-                "contagem_final": None,
-                "comentario_final": "SC",
-                "status": "PENDENTE",
-                "classificacao_furo": "",
-                "valor_furo": 0.0,
-                "resultado_final": "",
-                "audit_solicitada": False,
-            })
-    return rows
-
-
-def create_inventory(quantity, blind_count, responsible="Operador"):
-    db = st.session_state.db_df
-    positions = st.session_state.positions_df
-    selected = select_rotative_products(db, quantity)
-    if selected.empty:
-        return None, "Não há produtos elegíveis para seleção."
-    rows = expand_products_to_positions(selected, positions)
-    if not rows:
-        return None, "Os produtos selecionados não possuem endereços aptos."
-    doc = next_document_id()
-    cycle = current_cycle(db)
-    inv = {
-        "documento": doc,
-        "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "responsavel": responsible,
-        "quantidade_produtos_solicitada": int(quantity),
-        "blind_count": bool(blind_count),
-        "ciclo": cycle,
-        "status": "EM CONTAGEM",
-        "rows": rows,
-        "criado_em": datetime.now().isoformat(timespec="seconds"),
-    }
-    st.session_state.inventories[doc] = inv
-    return doc, None
-
-
-def inventory_summary(inv):
-    rows = inv["rows"]
-    return {
-        "posicoes": len(rows),
-        "produtos": len(set(r["codigo"] for r in rows)),
-        "pendentes": sum(r["primeira_contagem"] is None for r in rows),
-        "divergentes": sum(r["primeira_contagem"] is not None and abs(float(r["primeira_contagem"]) - float(r["qtd_sistema"])) > 1e-9 for r in rows),
-    }
-
-
-def mark_product_cycles(inv):
-    counted_codes = set()
-    for r in inv["rows"]:
-        if r["primeira_contagem"] is not None:
-            counted_codes.add(r["codigo"])
-    for code in counted_codes:
-        st.session_state.product_count_cycles[code] = int(st.session_state.product_count_cycles.get(code, 0)) + 1
-
-
-def finish_first_count(inv):
-    if any(r["primeira_contagem"] is None for r in inv["rows"]):
-        return False, "Ainda existem posições sem primeira contagem."
-    inv["status"] = "AGUARDANDO ANÁLISE"
-    return True, None
-
-
-def calculate_furo(row, count_value):
-    return (float(count_value) - float(row["qtd_sistema"]))
-
-
-def classify_divergence(row, final_count):
-    diff_qty = calculate_furo(row, final_count)
-    value = abs(diff_qty) * abs(float(row["valor_unitario"])) if "valor_unitario" in row else 0.0
-    row["valor_furo"] = value
-    if abs(diff_qty) < 1e-9:
-        row["classificacao_furo"] = "SEM DIVERGÊNCIA"
-    elif value <= 100:
-        row["classificacao_furo"] = "BAIXO"
-    elif value <= 1000:
-        row["classificacao_furo"] = "MÉDIO"
-    else:
-        row["classificacao_furo"] = "ALTO"
-
-
-def all_inventory_rows_dataframe(inv):
-    rows = []
-    for r in inv["rows"]:
-        item = dict(r)
-        rows.append(item)
-    return pd.DataFrame(rows)
-
-
-# ============================================================
-# SESSION STATE
-# ============================================================
-def init_state():
-    defaults = {
-        "cad_df": None, "end_df": None, "db_df": None, "positions_df": None,
-        "eligible_addresses": [], "cad_name": "", "end_name": "", "active_section": "Dashboard",
-        "inventories": {}, "product_count_cycles": {}, "inventory_profile": "Operador",
-        "selected_inventory": None, "new_inventory_open": False,
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-
-init_state()
-ensure_inventory_state()
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-active = st.session_state.active_section
-logo_uri = logo_data_uri()
+def dbconn():
+ c=sqlite3.connect(DATA); c.execute('CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY,v BLOB)'); c.commit(); return c
+def save(k,v):
+ c=dbconn(); c.execute('INSERT OR REPLACE INTO state(k,v) VALUES(?,?)',(k,sqlite3.Binary(pickle.dumps(v)))); c.commit(); c.close()
+def load(k,d=None):
+ c=dbconn(); r=c.execute('SELECT v FROM state WHERE k=?',(k,)).fetchone(); c.close()
+ if not r:return d
+ try:return pickle.loads(r[0])
+ except:return d
+
+if 'cfg' not in st.session_state: st.session_state.cfg={**DEFAULT,**(load('cfg',{}) or {})}
+if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
+if 'db' not in st.session_state: st.session_state.db=load('db')
+if 'pos' not in st.session_state: st.session_state.pos=load('pos')
+if 'eligible' not in st.session_state: st.session_state.eligible=load('eligible',[]) or []
+if 'inventories' not in st.session_state: st.session_state.inventories=load('inventories',{}) or {}
+if 'cycles' not in st.session_state: st.session_state.cycles=load('cycles',{}) or {}
+if 'section' not in st.session_state: st.session_state.section='Dashboard'
+if 'selected' not in st.session_state: st.session_state.selected=None
+if 'new_inv' not in st.session_state: st.session_state.new_inv=False
+if 'profile' not in st.session_state: st.session_state.profile='Operador'
+cfg=st.session_state.cfg
+
+def persist_cfg(): save('cfg',cfg)
+def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
+def persist_db(): save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
+
+def logo_uri():
+ b,n=st.session_state.logo
+ if not b:return None
+ ext=n.lower(); mime='image/png' if ext.endswith('.png') else 'image/jpeg' if ext.endswith(('.jpg','.jpeg')) else 'image/webp' if ext.endswith('.webp') else 'image/svg+xml'
+ return 'data:'+mime+';base64,'+base64.b64encode(b).decode()
+
+def css():
+ d=cfg['theme']=='Dark'; vals=(cfg['dark_bg'],cfg['dark_panel'],cfg['dark_panel2'],cfg['dark_border'],cfg['dark_text'],cfg['dark_muted']) if d else (cfg['clean_bg'],cfg['clean_panel'],cfg['clean_panel2'],cfg['clean_border'],cfg['clean_text'],cfg['clean_muted']); bg,panel,panel2,border,text,muted=vals
+ st.markdown(f'''<style>
+:root{{--p:{cfg['primary']};--ph:{cfg['hover']};--bg:{bg};--panel:{panel};--p2:{panel2};--border:{border};--text:{text};--muted:{muted}}}
+html,body,[class*="css"],.stApp{{font-family:{cfg['font']},Arial,sans-serif!important;font-size:{cfg['font_size']}px!important}}.stApp{{background:var(--bg);color:var(--text)}}[data-testid="stHeader"]{{background:var(--bg)}}
+section[data-testid="stSidebar"]{{background:var(--bg);border-right:1px solid var(--border);width:{cfg['sidebar_width']}px!important}}section[data-testid="stSidebar"]>div{{padding-top:.25rem!important}}
+/* Controle nativo de abrir/recolher: não reposicionar */
+.logo-area{{height:{cfg['logo_h']+25}px;display:flex;align-items:center;justify-content:{cfg['logo_align']};transform:translateY({cfg['logo_top']}px);padding:0 8px;overflow:hidden}}.logo-area img{{width:{cfg['logo_w']}px;height:{cfg['logo_h']}px;object-fit:contain;display:block}}
+.sidebar-sub{{color:var(--muted);font-size:11px;text-align:{cfg['sidebar_align']};transform:translateY({cfg['sub_top']}px);margin:0 7px {max(4,cfg['gap'])}px}}.menu-label{{color:var(--p);font-weight:800;font-size:12px;margin:0 7px 8px;transform:translateY({cfg['menu_top']}px);text-align:{cfg['sidebar_align']}}}
+section[data-testid="stSidebar"] .stButton>button{{width:100%;min-height:{cfg['item_h']}px;border:0;background:transparent;color:var(--muted);text-align:{cfg['sidebar_align']};font-size:{cfg['sidebar_font']}px;font-weight:800;border-radius:9px}}section[data-testid="stSidebar"] .stButton>button:hover{{background:var(--p2);color:var(--text)}}section[data-testid="stSidebar"] .stButton>button[kind="primary"]{{background:var(--p);color:#11130F}}section[data-testid="stSidebar"] .stButton>button::first-letter{{color:{cfg['icon_color']}}}
+.main-title{{font-size:{cfg['title_size']}px;font-weight:800;line-height:1.1;color:var(--text);margin:5px 0 2px}}.main-subtitle{{color:var(--muted);font-size:14px;margin-bottom:22px}}
+[data-testid="stMetric"]{{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px 19px;min-height:105px}}[data-testid="stMetricLabel"] p{{color:var(--muted)!important;font-size:11px!important;font-weight:800!important;letter-spacing:.5px;text-transform:uppercase}}[data-testid="stMetricValue"]{{color:var(--text)}}
+div[data-testid="stVerticalBlockBorderWrapper"]{{background:var(--panel);border-color:var(--border)!important;border-radius:14px}}.stButton>button,.stDownloadButton>button{{border-radius:8px;font-weight:800;border:1px solid var(--border);background:var(--p2);color:var(--text)}}.stButton>button:hover,.stDownloadButton>button:hover{{border-color:var(--p);color:var(--p)}}.stButton>button[kind="primary"]{{background:var(--p);color:#10120F;border-color:var(--p)}}label,.stMarkdown p,.stCaption,.stRadio label,.stCheckbox label{{color:var(--text)!important}}input,textarea{{color:var(--text)!important}}[data-testid="stDataFrame"]{{border:1px solid var(--border);border-radius:10px;overflow:hidden}}
+</style>''',unsafe_allow_html=True)
+css()
+
+def ncode(s): return s.astype('string').fillna('').str.strip().str.replace(r'\.0$','',regex=True).str.zfill(8)
+def naddr(s): return s.astype('string').fillna('').str.strip().str.replace(r'\s+',' ',regex=True).str.upper()
+def readxls(f): f.seek(0); return pd.read_excel(f,sheet_name=0,header=1,dtype=str)
+def pnum(v):
+ if v is None or pd.isna(v):return 0.0
+ s=str(v).strip().replace('R$','').replace(' ','')
+ if not s:return 0.0
+ neg=s.startswith('-');s=s.lstrip('+-')
+ if ',' in s and '.' in s:s=s.replace('.','').replace(',','.') if s.rfind(',')>s.rfind('.') else s.replace(',','')
+ elif ',' in s:s=s.replace(',','.')
+ try:x=float(s);return -x if neg else x
+ except:return 0.0
+def nums(s):return s.apply(pnum).astype(float)
+def fn(v,d=3):return f'{float(v):,.{d}f}'.replace(',','X').replace('.',',').replace('X','.')
+def brl(v):return f'R$ {float(v):,.2f}'.replace(',','X').replace('.',',').replace('X','.')
+
+def build_db(an,end,eligible):
+ a=an.iloc[:,[0,3,7,10]].copy();a.columns=['codigo','descricao','qtd_analitico','valor_k'];a['codigo']=ncode(a.codigo);a['descricao']=a.descricao.astype('string').fillna('').str.strip();a['qtd_analitico']=nums(a.qtd_analitico);a['valor_k']=nums(a.valor_k)
+ a=a.groupby('codigo',as_index=False).agg(descricao=('descricao','first'),qtd_analitico=('qtd_analitico','sum'),valor_k=('valor_k','sum'));a['valor_unitario']=a.apply(lambda r:r.valor_k/r.qtd_analitico if abs(r.qtd_analitico)>1e-12 else 0,axis=1)
+ e=end.iloc[:,[0,3,7]].copy();e.columns=['codigo','endereco','quantidade'];e['codigo']=ncode(e.codigo);e['endereco']=naddr(e.endereco);e['quantidade']=nums(e.quantidade);e=e.groupby(['codigo','endereco'],as_index=False).quantidade.sum(); ap=set(naddr(pd.Series(eligible)).tolist());e['apto']=e.endereco.isin(ap)
+ saldo=e[e.apto].groupby('codigo',as_index=False).quantidade.sum().rename(columns={'quantidade':'saldo_apto'});d=a.merge(saldo,on='codigo',how='outer');d.saldo_apto=d.saldo_apto.fillna(0.0);d.qtd_analitico=d.qtd_analitico.fillna(0.0);d.valor_k=d.valor_k.fillna(0.0);d.valor_unitario=d.valor_unitario.fillna(0.0);d.descricao=d.descricao.fillna('SEM DESCRIÇÃO NO ESTOQUE ANALÍTICO');d['valor_total']=d.saldo_apto*d.valor_unitario;act=(d.saldo_apto>0)&(d.valor_unitario>0);d['classificacao_r_un']=pd.NA;d['classificacao_r_total']=pd.NA;d.loc[act,'classificacao_r_un']=d.loc[act].valor_unitario.rank(method='first',ascending=False).astype(int);d.loc[act,'classificacao_r_total']=d.loc[act].valor_k.rank(method='first',ascending=False).astype(int);d=d.sort_values(['classificacao_r_total','codigo'],na_position='last').reset_index(drop=True);e=e.merge(d[['codigo','valor_unitario']],on='codigo',how='left');return d,e
+
+def nextdoc():
+ today=datetime.now().strftime('%d%m%Y');q=1
+ for x in st.session_state.inventories.values():
+  if x.get('documento','').startswith(today+'-'):
+   try:q=max(q,int(x['documento'].split('-')[-1])+1)
+   except:pass
+ return f'{today}-{q:03d}'
+def cycle():
+ codes=st.session_state.db.loc[st.session_state.db.saldo_apto>0,'codigo'].astype(str);return min([int(st.session_state.cycles.get(c,0)) for c in codes],default=0)+1
+def select_products(db,n):
+ w=db[(db.saldo_apto>0)&(db.valor_unitario>0)].copy();w['cc']=w.codigo.astype(str).map(lambda c:int(st.session_state.cycles.get(c,0)));m=w.cc.min();w=w[w.cc==m];u=w.sort_values(['classificacao_r_un','codigo'],na_position='last');t=w.sort_values(['classificacao_r_total','codigo'],na_position='last');nu=n//2;sel=[]
+ for c in u.codigo:
+  if len(sel)>=nu:break
+  if c not in sel:sel.append(c)
+ for c in t.codigo:
+  if len(sel)>=n:break
+  if c not in sel:sel.append(c)
+ if len(sel)<n:
+  for c in pd.concat([u,t]).drop_duplicates('codigo').codigo:
+   if c not in sel:sel.append(c)
+   if len(sel)>=n:break
+ return db[db.codigo.isin(sel)].copy()
+def make_rows(sel,pos):
+ rows=[]
+ for _,p in sel.iterrows():
+  for _,r in pos[(pos.codigo==p.codigo)&pos.apto].iterrows():
+   rows.append({'id':uuid.uuid4().hex[:12],'codigo':str(p.codigo),'descricao':str(p.descricao),'endereco':str(r.endereco),'qtd_sistema':float(r.quantidade),'valor_unitario':float(p.valor_unitario),'contagens':[],'status':'PENDENTE','contagem_final':None,'resultado_final':'','comentario_final':'SC'})
+ return rows
+def persist_inv(inv):st.session_state.inventories[inv['documento']]=inv;save('inventories',st.session_state.inventories)
+def addcount(r,q,cm,stage):r['contagens'].append({'etapa':stage,'quantidade':float(q),'comentario':cm.strip() if cm.strip() else 'SC','data':datetime.now().strftime('%d/%m/%Y %H:%M:%S')})
+def last(r):return r['contagens'][-1]['quantidade'] if r['contagens'] else None
+def diff(r,q):return float(q)-float(r['qtd_sistema'])
+def furo(r,q):return abs(diff(r,q))*abs(float(r['valor_unitario']))
+def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
+def mark_cycle(inv):
+ if inv.get('ciclo_marcado'):return
+ for c in {r['codigo'] for r in inv['rows'] if r['contagens']}:st.session_state.cycles[c]=int(st.session_state.cycles.get(c,0))+1
+ inv['ciclo_marcado']=True;save('cycles',st.session_state.cycles);persist_inv(inv)
+def close_inv(inv):
+ for r in inv['rows']:
+  if r['contagem_final'] is None:r['contagem_final']=last(r)
+  if not r['resultado_final']:r['resultado_final']='ENCERRADO PELO GESTOR'
+  r['status']='FINALIZADO'
+ inv['status']='FECHADO';mark_cycle(inv);persist_inv(inv)
+
+# Sidebar
 with st.sidebar:
-    if logo_uri:
-        st.markdown(f'<div class="logo-area"><img src="{logo_uri}" alt="Logo"></div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="logo-area"><div class="logo-placeholder">LOGO DA EMPRESA<br>Configure sua imagem em Configurações.</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sidebar-sub">{config["sidebar_subtitle"]}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="section-label">{config["menu_label"]}</div>', unsafe_allow_html=True)
-    nav_items = [
-        ("Dashboard", f"▦  {config['dashboard_label']}"),
-        ("Inventário Rotativo", f"✎  {config['inventory_label']}"),
-        ("Banco de Dados", f"▣  {config['database_label']}"),
-        ("Registro", f"◷  {config['register_label']}"),
-        ("Configurações", f"⚙  {config['settings_label']}"),
-    ]
-    for key, label in nav_items:
-        st.button(label, key=f"nav_{key}", type="primary" if active == key else "secondary",
-                  on_click=lambda k=key: st.session_state.update(active_section=k))
-    if config["show_footer"]:
-        st.markdown(f'<div class="footer-note">{config["footer_text"]}</div>', unsafe_allow_html=True)
+ u=logo_uri()
+ if u:st.markdown(f'<div class="logo-area"><img src="{u}"></div>',unsafe_allow_html=True)
+ else:st.markdown('<div class="logo-area"><div style="color:var(--muted);text-align:center;font-size:11px">LOGO DA EMPRESA<br>Configure em Configurações.</div></div>',unsafe_allow_html=True)
+ st.markdown(f'<div class="sidebar-sub">{config["sidebar_subtitle"]}</div>',unsafe_allow_html=True);st.markdown(f'<div class="menu-label">{config["menu_label"]}</div>',unsafe_allow_html=True)
+ nav=[('Dashboard',f'▦  {config["dashboard_label"]}'),('Inventário Rotativo',f'✎  {config["inventory_label"]}'),('Banco de Dados',f'▣  {config["database_label"]}'),('Registro',f'◷  {config["register_label"]}'),('Configurações',f'⚙  {config["settings_label"]}')]
+ tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top']}
+ for k,l in nav:
+  off=tops.get(k,0)
+  st.markdown(f'<div style="height:0;margin-top:{off}px"></div>',unsafe_allow_html=True)
+  if st.button(l,key='nav_'+k,type='primary' if st.session_state.section==k else 'secondary'):st.session_state.section=k;st.rerun()
 
-# ============================================================
-# CABEÇALHO
-# ============================================================
-st.markdown(f'<div class="main-title">{config["app_title"]}</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="main-subtitle">{config["app_subtitle"]}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="main-title">{config["title"]}</div><div class="main-subtitle">{config["subtitle"]}</div>',unsafe_allow_html=True)
+active=st.session_state.section
 
-# ============================================================
-# DASHBOARD
-# ============================================================
-if active == "Dashboard":
-    st.subheader(config["dashboard_title"])
-    if config["dashboard_subtitle"]: st.caption(config["dashboard_subtitle"])
-    db = st.session_state.db_df
-    if db is None:
-        st.info("Importe os dois relatórios na aba **Banco de Dados** para ativar os indicadores.")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Itens com saldo", "0"); c2.metric("Itens contados", "0"); c3.metric("Itens divergentes", "0"); c4.metric("Acuracidade", "—")
-    else:
-        itens_saldo = int((db["saldo_apto"] > 0).sum())
-        all_rows = [r for inv in st.session_state.inventories.values() for r in inv["rows"]]
-        counted = [r for r in all_rows if r["primeira_contagem"] is not None]
-        div = [r for r in counted if abs(float(r["primeira_contagem"]) - float(r["qtd_sistema"])) > 1e-9]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Itens diferentes com saldo", f"{itens_saldo:,}".replace(",", "."))
-        c2.metric("Posições contabilizadas", f"{len(counted):,}".replace(",", "."))
-        c3.metric("Posições divergentes", f"{len(div):,}".replace(",", "."))
-        c4.metric("Divergentes / contados", f"{len(div)/len(counted)*100:.2f}%" if counted else "—")
-        c5, c6 = st.columns(2)
-        c5.metric("Divergentes / itens com saldo", f"{len(div)/itens_saldo*100:.2f}%" if itens_saldo else "—")
-        c6.metric("Valor total do saldo apto", format_brl(db["valor_total"].sum()))
+# Dashboard
+if active=='Dashboard':
+ st.subheader(config['dashboard_title']);st.caption('Visão geral dos indicadores do estoque.')
+ if st.session_state.db is None:st.info('Importe e processe os relatórios na aba Banco de Dados.')
+ else:
+  db=st.session_state.db;items=int((db.saldo_apto>0).sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
+  a,b,c,d=st.columns(4);a.metric('ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'));b.metric('POSIÇÕES CONTABILIZADAS',f'{len(cnt):,}'.replace(',','.'));c.metric('POSIÇÕES DIVERGENTES',f'{len(div):,}'.replace(',','.'));d.metric('DIVERGENTES / CONTADOS',f'{len(div)/len(cnt)*100:.2f}%' if cnt else '—');a,b=st.columns(2);a.metric('DIVERGENTES / ITENS COM SALDO',f'{len(div)/items*100:.2f}%' if items else '—');b.metric('VALOR TOTAL DO ESTOQUE ANALÍTICO',brl(db.valor_total.sum()))
 
-# ============================================================
-# INVENTÁRIO ROTATIVO
-# ============================================================
-if active == "Inventário Rotativo":
-    st.subheader(config["inventory_title"])
-    if config["inventory_subtitle"]: st.caption(config["inventory_subtitle"])
+# Inventory
+elif active=='Inventário Rotativo':
+ st.subheader(config['inventory_title']);st.caption(config['inventory_subtitle'])
+ if st.session_state.db is None:st.info('Primeiro importe e processe a base na aba Banco de Dados.')
+ else:
+  a,b=st.columns(2);st.session_state.profile=a.radio('Perfil de teste',['Operador','Gestor'],index=0 if st.session_state.profile=='Operador' else 1,horizontal=True)
+  if b.button(config['new_inventory_text'],type='primary',use_container_width=True):st.session_state.new_inv=True;st.rerun()
+  if st.session_state.new_inv:
+   with st.container(border=True):
+    a,b,c=st.columns(3);n=a.number_input('Quantidade de produtos distintos',1,500,10);blind=b.checkbox('Contagem cega',value=cfg['blind_default']);c.metric('Ciclo atual',cycle());x,y=st.columns(2)
+    if x.button('Criar inventário',type='primary',use_container_width=True):
+     sel=select_products(st.session_state.db,n);rows=make_rows(sel,st.session_state.pos)
+     if not rows:st.error('Os produtos selecionados não possuem endereços aptos.')
+     else:
+      doc=nextdoc();st.session_state.inventories[doc]={'documento':doc,'data':datetime.now().strftime('%d/%m/%Y %H:%M'),'responsavel':st.session_state.profile,'blind_count':blind,'ciclo':cycle(),'status':'EM CONTAGEM','rows':rows,'criado_em':datetime.now().isoformat(timespec='seconds'),'ciclo_marcado':False};persist_inv(st.session_state.inventories[doc]);st.session_state.selected=doc;st.session_state.new_inv=False;st.rerun()
+    if y.button('Cancelar'):st.session_state.new_inv=False;st.rerun()
+  for inv in sorted(st.session_state.inventories.values(),key=lambda x:x.get('criado_em',''),reverse=True):
+   with st.container(border=True):
+    s=len(inv['rows']);prod=len({r['codigo'] for r in inv['rows']});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
+    if st.button('Abrir',key='op_'+inv['documento']):st.session_state.selected=inv['documento'];st.rerun()
+  doc=st.session_state.selected
+  if doc in st.session_state.inventories:
+   inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
+   prof=st.session_state.profile
+   if prof=='Operador' and inv['status']=='EM CONTAGEM':
+    for r in inv['rows']:
+     if r['contagens']:continue
+     with st.container(border=True):
+      a,b,c=st.columns([1.1,3,1.3]);a.markdown(f'**{r["codigo"]}**');b.write(f'{r["descricao"]}\n\n**Endereço:** {r["endereco"]}');c.write('**Qtd. sistema:** OCULTA' if inv['blind_count'] else f'**Qtd. sistema:** {fn(r["qtd_sistema"])}');x,y=st.columns([1,2]);q=x.number_input('Contagem',0.0,step=.001,format='%.3f',key='q1_'+r['id']);cm=y.text_input('Comentário (opcional)',key='cm1_'+r['id'])
+      if st.button('Salvar contagem',key='sv1_'+r['id'],type='primary'):addcount(r,q,cm,'1ª CONTAGEM');persist_inv(inv);st.rerun()
+    if all(r['contagens'] for r in inv['rows']):
+     if st.button('Fechar Contagem',type='primary'):inv['status']='AGUARDANDO ANÁLISE';persist_inv(inv);st.rerun()
+   elif prof=='Gestor' and inv['status']=='AGUARDANDO ANÁLISE':
+    st.markdown('#### Análise do gestor')
+    divs=[r for r in inv['rows'] if r['contagens'] and abs(diff(r,last(r)))>1e-9]
+    if not divs:st.success('Não existem divergências.');
+    for r in divs:
+     with st.container(border=True):
+      q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Furo',brl(furo(r,q)));st.caption(f'Classificação: {sev(furo(r,q))} · Comentário: {r["contagens"][-1]["comentario"]}')
+      x,y,z=st.columns(3)
+      if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+      if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+      if z.button('ENCERRAR ESTE ITEM',key='e1_'+r['id']):r['contagem_final']=q;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
+    x,y,z=st.columns(3)
+    if x.button('RECONTAR TODOS',type='primary',use_container_width=True):
+     for r in inv['rows']:
+      if r['contagens'] and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
+     inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+    if y.button('AUDITAR TODOS',use_container_width=True):
+     for r in inv['rows']:
+      if r['contagens'] and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
+     inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
+   elif prof=='Operador' and inv['status']=='AGUARDANDO RECONTAGEM':
+    st.markdown('#### Recontagem — itens liberados pelo gestor')
+    targets=[r for r in inv['rows'] if r['status']=='RECONTAR']
+    for r in targets:
+     with st.container(border=True):
+      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Nova contagem',0.0,step=.001,format='%.3f',key='q2_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm2_'+r['id'])
+      if st.button('Salvar nova contagem',key='sv2_'+r['id'],type='primary'):addcount(r,q,cm,f'{len(r["contagens"])+1}ª CONTAGEM');r['status']='RECONTADA';persist_inv(inv);st.rerun()
+    if not any(r['status']=='RECONTAR' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+   elif prof=='Gestor' and inv['status']=='AGUARDANDO DECISÃO':
+    st.markdown('#### Avaliação após cada recontagem')
+    for r in inv['rows']:
+     if r['status'] not in ('RECONTADA','AUDITADA','PENDENTE'):continue
+     q2=last(r);q1=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
+     if q2 is None:
+      continue
+     with st.container(border=True):
+      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1)}** · Atual: **{fn(q2)}**')
+      if q1 is not None and abs(q2-q1)<1e-9:
+       st.success('Atual igual à anterior: ERRO DE INVENTÁRIO. Terceira contagem não é necessária.');r['contagem_final']=q2;r['resultado_final']='ERRO DE INVENTÁRIO';r['status']='FINALIZADO';persist_inv(inv)
+      elif abs(q2-r['qtd_sistema'])<1e-9:
+       st.success('Atual igual ao sistema: SISTEMA CONFIRMADO. Terceira contagem não é necessária.');r['contagem_final']=q2;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO';persist_inv(inv)
+      else:
+       st.warning('A divergência permanece.');a,b,c=st.columns(3)
+       if a.button('AUDITAR ESTE ITEM',key='da_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+       if b.button('RECONTAR NOVAMENTE',key='dr_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+       if c.button('ENCERRAR ESTE ITEM',key='dc_'+r['id']):r['contagem_final']=q2;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
+    if st.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
+     for r in inv['rows']:
+      if r['status']=='RECONTADA' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
+     inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+    if st.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
+     for r in inv['rows']:
+      if r['status']=='RECONTADA' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
+     inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+    if all(r['status']=='FINALIZADO' for r in inv['rows']) and st.button('ENCERRAR INVENTÁRIO',type='primary'):close_inv(inv);st.rerun()
+   elif prof=='Gestor' and inv['status']=='AGUARDANDO AUDITORIA':
+    st.markdown('#### Auditoria / 3ª ou próxima contagem')
+    for r in inv['rows']:
+     if r['status']!='AUDITORIA':continue
+     with st.container(border=True):
+      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}**');q=st.number_input('Contagem de auditoria',0.0,step=.001,format='%.3f',key='q3_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm3_'+r['id'])
+      if st.button('Salvar auditoria',key='sv3_'+r['id'],type='primary'):addcount(r,q,cm,'AUDITORIA');r['status']='AUDITADA';persist_inv(inv);st.rerun()
+    if not any(r['status']=='AUDITORIA' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
+   elif prof=='Gestor' and inv['status']=='FECHADO':
+    st.success('Inventário encerrado e salvo no registro.');
+    if st.button('Reabrir análise'):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
 
-    if st.session_state.db_df is None:
-        st.info("Primeiro importe e processe a base na aba **Banco de Dados**.")
-    else:
-        p1, p2 = st.columns([1, 1])
-        profile = p1.radio("Perfil de teste", ["Operador", "Gestor"], index=0 if st.session_state.inventory_profile == "Operador" else 1, horizontal=True)
-        st.session_state.inventory_profile = profile
-        if p2.button(config["new_inventory_text"], type="primary", use_container_width=True):
-            st.session_state.new_inventory_open = True
-            st.rerun()
+# Database
+elif active=='Banco de Dados':
+ st.subheader(config['database_title']);st.caption('Base atual: ESTOQUE ANALÍTICO + ENDEREÇO. Lote continua ignorado.')
+ a,b=st.columns(2)
+ with a:
+  f=st.file_uploader('1. Relatório ESTOQUE ANALÍTICO',type=['xlsx','xlsm','xltx'],key='up_an',help='A=Código, D=Descrição, H=Quantidade/Saldo, K=Valor em Estoque')
+  if f:st.session_state.an_df=readxls(f);save('an_name',f.name);st.success(f'Carregado: {f.name} · {len(st.session_state.an_df):,} linhas')
+ with b:
+  f=st.file_uploader('2. Relatório ENDEREÇO',type=['xlsx','xlsm','xltx'],key='up_en',help='A=Código, D=Endereço, H=Quantidade')
+  if f:st.session_state.en_df=readxls(f);save('en_name',f.name);st.success(f'Carregado: {f.name} · {len(st.session_state.en_df):,} linhas')
+ if 'an_df' not in st.session_state:st.session_state.an_df=None
+ if 'en_df' not in st.session_state:st.session_state.en_df=None
+ if st.session_state.an_df is not None and st.session_state.en_df is not None:
+  st.divider();st.subheader(config['address_title']);addresses=sorted([x for x in naddr(st.session_state.en_df.iloc[:,3]).unique() if x])
+  if not st.session_state.eligible:st.session_state.eligible=addresses.copy()
+  q=st.text_input('Pesquisar endereço',placeholder='Ex.: G9-M3-A-C1');shown=[x for x in addresses if q.strip().upper() in x] if q.strip() else addresses
+  a,b,c=st.columns(3)
+  if a.button('Marcar exibidos'):st.session_state.eligible=sorted(set(st.session_state.eligible)|set(shown));persist_db();st.rerun()
+  if b.button('Desmarcar exibidos'):st.session_state.eligible=[x for x in st.session_state.eligible if x not in set(shown)];persist_db();st.rerun()
+  if c.button('Marcar todos'):st.session_state.eligible=addresses.copy();persist_db();st.rerun()
+  selected=set(st.session_state.eligible);st.caption(f'{len(shown)} endereços exibidos · {len(selected)} aptos');cols=st.columns(4)
+  for i,addr in enumerate(shown):
+   with cols[i%4]:
+    v=st.checkbox(addr,value=addr in selected,key='address_'+str(abs(hash(addr))))
+    if v!=(addr in selected):
+     selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_db()
+  a,b=st.columns(2);a.metric('Endereços encontrados',len(addresses));b.metric('Endereços aptos',len(st.session_state.eligible))
+  if st.button('PROCESSAR E ATUALIZAR BANCO',type='primary'):
+   try:
+    d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;st.session_state.cycles={};persist_db();save('cycles',{});st.success('Banco processado e salvo.')
+   except Exception as e:st.error(f'Erro: {e}')
+ if st.session_state.db is not None:
+  st.divider();st.subheader('Banco consolidado');v=st.session_state.db.copy();v['valor_unitario']=v.valor_unitario.map(brl);v['saldo_apto']=v.saldo_apto.map(fn);v['valor_k']=v.valor_k.map(brl);v['valor_total']=v.valor_total.map(brl);v.columns=['Código','Descrição','Qtd. Analítico','Valor Total K','Valor Unitário','Saldo Apto','Valor Total Apto','Classificação R$ UN.','Classificação R$ TOTAL'];st.dataframe(v,use_container_width=True,hide_index=True,height=500);st.download_button('Exportar banco CSV',st.session_state.db.to_csv(index=False).encode('utf-8-sig'),'banco_consolidado.csv','text/csv');st.caption('Valor Unitário = K ÷ H. Valor Total do saldo apto = Saldo Apto × Valor Unitário. A Classificação R$ TOTAL usa o valor K do Estoque Analítico.')
 
-        if st.session_state.new_inventory_open:
-            st.markdown("### Novo Inventário")
-            with st.container(border=True):
-                c1, c2, c3 = st.columns(3)
-                qty = c1.number_input("Quantidade de produtos", min_value=1, max_value=500, value=10, step=1)
-                blind = c2.checkbox("Contagem cega", value=bool(config["inventory_default_blind"]))
-                c3.metric("Ciclo atual", current_cycle(st.session_state.db_df))
-                st.caption("A quantidade é de produtos distintos. Cada produto pode gerar várias posições físicas, uma por endereço apto.")
-                b1, b2 = st.columns(2)
-                if b1.button("Criar inventário", type="primary", use_container_width=True):
-                    doc, err = create_inventory(qty, blind, responsible=profile)
-                    if err: st.error(err)
-                    else:
-                        st.session_state.new_inventory_open = False
-                        st.session_state.selected_inventory = doc
-                        st.success(f"Inventário {doc} criado.")
-                        st.rerun()
-                if b2.button("Cancelar", use_container_width=True):
-                    st.session_state.new_inventory_open = False
-                    st.rerun()
+# Register
+elif active=='Registro':
+ st.subheader(config['register_title']);st.caption(config['register_subtitle']);rows=[]
+ for inv in st.session_state.inventories.values():
+  if inv['status']!='FECHADO':continue
+  for r in inv['rows']:
+   rows.append({'Documento':inv['documento'],'Data':inv['data'],'Responsável':inv['responsavel'],'Ciclo':inv['ciclo'],'Código':r['codigo'],'Descrição':r['descricao'],'Endereço':r['endereco'],'Qtd. Sistema':r['qtd_sistema'],'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),'Contagem Final':r['contagem_final'],'Resultado':r['resultado_final'],'Valor Furo':furo(r,r['contagem_final']) if r['contagem_final'] is not None else 0})
+ if rows:
+  df=pd.DataFrame(rows);st.dataframe(df,use_container_width=True,hide_index=True);st.download_button('Exportar Registro CSV',df.to_csv(index=False).encode('utf-8-sig'),'registro_inventarios.csv','text/csv')
+ else:st.info('Nenhum inventário fechado.')
 
-        inventories = list(st.session_state.inventories.values())
-        if inventories:
-            st.markdown("### Inventários abertos / recentes")
-            for inv in sorted(inventories, key=lambda x: x["criado_em"], reverse=True):
-                s = inventory_summary(inv)
-                with st.container(border=True):
-                    a, b, c, d, e = st.columns([2.2, 1.2, 1.2, 1.2, 1.4])
-                    a.markdown(f"**{inv['documento']}**  ")
-                    a.caption(f"Ciclo {inv['ciclo']} · {inv['data']}")
-                    b.write(f"**{inv['status']}**")
-                    c.metric("Produtos", s["produtos"])
-                    d.metric("Posições", s["posicoes"])
-                    e.metric("Pendentes", s["pendentes"])
-                    if st.button("Abrir", key=f"open_{inv['documento']}"):
-                        st.session_state.selected_inventory = inv["documento"]
-                        st.rerun()
-
-        doc = st.session_state.selected_inventory
-        if doc and doc in st.session_state.inventories:
-            inv = st.session_state.inventories[doc]
-            st.divider()
-            st.markdown(f"### Inventário {doc}")
-            st.write(f"**Status:** {inv['status']} · **Ciclo:** {inv['ciclo']} · **Contagem cega:** {'SIM' if inv['blind_count'] else 'NÃO'}")
-
-            if profile == "Operador" and inv["status"] == "EM CONTAGEM":
-                st.markdown("#### 1ª Contagem")
-                st.caption("Comentário é opcional. Se ficar vazio, o sistema registra SC.")
-                for i, row in enumerate(inv["rows"]):
-                    if row["primeira_contagem"] is not None:
-                        continue
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([1.1, 2.6, 1.3])
-                        c1.markdown(f"**{row['codigo']}**")
-                        c2.write(f"{row['descricao']}  \n**Endereço:** {row['endereco']}")
-                        if inv["blind_count"]:
-                            c3.write("**Qtd. sistema:** OCULTA")
-                        else:
-                            c3.write(f"**Qtd. sistema:** {format_number(row['qtd_sistema'])}")
-                        d1, d2 = st.columns([1, 2])
-                        count = d1.number_input("Contagem", min_value=0.0, step=0.001, format="%.3f", key=f"c1_{doc}_{i}")
-                        comment = d2.text_input("Comentário (opcional)", key=f"cm1_{doc}_{i}")
-                        if st.button("Salvar contagem", key=f"save1_{doc}_{i}", type="primary"):
-                            row["primeira_contagem"] = float(count)
-                            row["comentario_1"] = comment.strip() if comment.strip() else "SC"
-                            st.rerun()
-                if all(r["primeira_contagem"] is not None for r in inv["rows"]):
-                    if st.button("Fechar Contagem", type="primary"):
-                        ok, err = finish_first_count(inv)
-                        if ok:
-                            mark_product_cycles(inv)
-                            st.rerun()
-                        else: st.error(err)
-
-            elif profile == "Gestor" and inv["status"] == "AGUARDANDO ANÁLISE":
-                st.markdown("#### Análise do gestor — somente divergências")
-                divergent_rows = []
-                unit_price_map = st.session_state.db_df.set_index("codigo")["ultimo_preco"].to_dict()
-                for i, row in enumerate(inv["rows"]):
-                    if row["primeira_contagem"] is not None:
-                        row["valor_unitario"] = float(unit_price_map.get(row["codigo"], 0))
-                        diff = float(row["primeira_contagem"]) - float(row["qtd_sistema"])
-                        if abs(diff) > 1e-9:
-                            row["valor_furo"] = abs(diff) * row["valor_unitario"]
-                            if row["valor_furo"] <= 100: row["classificacao_furo"] = "BAIXO"
-                            elif row["valor_furo"] <= 1000: row["classificacao_furo"] = "MÉDIO"
-                            else: row["classificacao_furo"] = "ALTO"
-                            divergent_rows.append((i, row))
-                if not divergent_rows:
-                    st.success("Não existem divergências. O gestor pode fechar o inventário.")
-                    if st.button("Fechar Inventário", type="primary"):
-                        inv["status"] = "FECHADO"
-                        st.rerun()
-                else:
-                    for i, row in divergent_rows:
-                        with st.container(border=True):
-                            st.markdown(f"**{row['codigo']} — {row['endereco']}**")
-                            st.write(row["descricao"])
-                            c1, c2, c3, c4 = st.columns(4)
-                            c1.metric("Sistema", format_number(row["qtd_sistema"]))
-                            c2.metric("1ª contagem", format_number(row["primeira_contagem"]))
-                            c3.metric("Diferença", format_number(float(row["primeira_contagem"]) - float(row["qtd_sistema"])))
-                            c4.metric("Valor do furo", format_brl(row["valor_furo"]))
-                            st.caption(f"Classificação: {row['classificacao_furo']} · Comentário: {row['comentario_1']}")
-                            if st.button("Solicitar 2ª contagem", key=f"req2_{doc}_{i}"):
-                                row["status"] = "SEGUNDA_CONTAGEM"
-                                row["segunda_contagem"] = None
-                                inv["status"] = "AGUARDANDO 2ª CONTAGEM"
-                                st.rerun()
-                    if st.button("Fechar com 1ª contagem", type="primary"):
-                        for _, row in divergent_rows:
-                            row["contagem_final"] = row["primeira_contagem"]
-                            row["resultado_final"] = "FECHADO PELO GESTOR"
-                        inv["status"] = "FECHADO"
-                        st.rerun()
-
-            elif profile == "Operador" and inv["status"] == "AGUARDANDO 2ª CONTAGEM":
-                st.markdown("#### 2ª Contagem")
-                for i, row in enumerate(inv["rows"]):
-                    if row["status"] != "SEGUNDA_CONTAGEM": continue
-                    with st.container(border=True):
-                        st.markdown(f"**{row['codigo']} — {row['endereco']}**")
-                        st.write(row["descricao"])
-                        c1, c2 = st.columns(2)
-                        c1.metric("1ª contagem", format_number(row["primeira_contagem"]))
-                        c2.metric("Sistema", "OCULTO" if inv["blind_count"] else format_number(row["qtd_sistema"]))
-                        count2 = st.number_input("2ª contagem", min_value=0.0, step=0.001, format="%.3f", key=f"c2_{doc}_{i}")
-                        comment2 = st.text_input("Comentário (opcional)", key=f"cm2_{doc}_{i}")
-                        if st.button("Salvar 2ª contagem", key=f"save2_{doc}_{i}", type="primary"):
-                            row["segunda_contagem"] = float(count2)
-                            row["comentario_2"] = comment2.strip() if comment2.strip() else "SC"
-                            row["status"] = "SEGUNDA_CONTAGEM_FEITA"
-                            st.rerun()
-
-                if all(r["status"] != "SEGUNDA_CONTAGEM" for r in inv["rows"]):
-                    inv["status"] = "AGUARDANDO ANÁLISE 2"
-                    st.rerun()
-
-            elif profile == "Gestor" and inv["status"] == "AGUARDANDO ANÁLISE 2":
-                st.markdown("#### Análise da 2ª contagem")
-                unit_price_map = st.session_state.db_df.set_index("codigo")["ultimo_preco"].to_dict()
-                pending_audit = False
-                for i, row in enumerate(inv["rows"]):
-                    if row["status"] != "SEGUNDA_CONTAGEM_FEITA": continue
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Sistema", format_number(row["qtd_sistema"]))
-                    c2.metric("1ª", format_number(row["primeira_contagem"]))
-                    c3.metric("2ª", format_number(row["segunda_contagem"]))
-                    c4.metric("Valor 1ª", format_brl(abs(float(row["primeira_contagem"]) - float(row["qtd_sistema"])) * float(unit_price_map.get(row["codigo"], 0))))
-                    if abs(float(row["segunda_contagem"]) - float(row["primeira_contagem"])) < 1e-9:
-                        st.success(f"{row['codigo']} / {row['endereco']}: 2ª contagem igual à 1ª — erro de inventário cravado.")
-                        row["contagem_final"] = row["primeira_contagem"]
-                        row["resultado_final"] = "ERRO DE INVENTÁRIO"
-                    elif abs(float(row["segunda_contagem"]) - float(row["qtd_sistema"])) < 1e-9:
-                        st.success(f"{row['codigo']} / {row['endereco']}: 2ª contagem bate com o sistema.")
-                        row["contagem_final"] = row["segunda_contagem"]
-                        row["resultado_final"] = "SISTEMA CONFIRMADO"
-                    else:
-                        pending_audit = True
-                        st.warning(f"{row['codigo']} / {row['endereco']}: 1ª, 2ª e sistema são diferentes.")
-                        choice = st.selectbox("Decisão do gestor", ["Fechar com 1ª", "Fechar com 2ª", "Solicitar auditoria"], key=f"dec_{doc}_{i}")
-                        if choice == "Solicitar auditoria":
-                            row["status"] = "AUDITORIA"
-                        elif choice == "Fechar com 1ª":
-                            row["contagem_final"] = row["primeira_contagem"]; row["resultado_final"] = "FECHADO COM 1ª"
-                        else:
-                            row["contagem_final"] = row["segunda_contagem"]; row["resultado_final"] = "FECHADO COM 2ª"
-                if not pending_audit and all(r["contagem_final"] is not None for r in inv["rows"]):
-                    if st.button("Fechar Inventário", type="primary"):
-                        inv["status"] = "FECHADO"; st.rerun()
-                elif any(r["status"] == "AUDITORIA" for r in inv["rows"]):
-                    if st.button("Enviar itens para auditoria"):
-                        inv["status"] = "AUDITORIA"; st.rerun()
-
-            elif profile == "Gestor" and inv["status"] == "AUDITORIA":
-                st.markdown("#### Auditoria / 3ª contagem")
-                for i, row in enumerate(inv["rows"]):
-                    if row["status"] != "AUDITORIA": continue
-                    with st.container(border=True):
-                        st.markdown(f"**{row['codigo']} — {row['endereco']}**")
-                        st.write(row["descricao"])
-                        c1, c2 = st.columns(2)
-                        c1.metric("Sistema", format_number(row["qtd_sistema"]))
-                        c2.metric("1ª / 2ª", f"{format_number(row['primeira_contagem'])} / {format_number(row['segunda_contagem'])}")
-                        count3 = st.number_input("3ª contagem / auditoria", min_value=0.0, step=0.001, format="%.3f", key=f"c3_{doc}_{i}")
-                        comment3 = st.text_input("Comentário da auditoria (opcional)", key=f"cm3_{doc}_{i}")
-                        if st.button("Salvar auditoria", key=f"save3_{doc}_{i}", type="primary"):
-                            row["terceira_contagem"] = float(count3)
-                            row["comentario_3"] = comment3.strip() if comment3.strip() else "SC"
-                            row["contagem_final"] = float(count3)
-                            row["comentario_final"] = row["comentario_3"]
-                            row["resultado_final"] = "AUDITORIA"
-                            row["status"] = "AUDITORIA_FEITA"
-                            st.rerun()
-                if all(r["status"] != "AUDITORIA" for r in inv["rows"]):
-                    if st.button("Fechar Inventário após auditoria", type="primary"):
-                        inv["status"] = "FECHADO"; st.rerun()
-
-            elif inv["status"] == "FECHADO":
-                st.success("Inventário fechado e pronto para registro histórico.")
-                df = all_inventory_rows_dataframe(inv)
-                if not df.empty:
-                    view = df[["codigo","descricao","endereco","qtd_sistema","primeira_contagem","segunda_contagem","terceira_contagem","contagem_final","comentario_final","resultado_final"]].copy()
-                    view.columns = ["Código","Descrição","Endereço","Qtd. Sistema","1ª Contagem","2ª Contagem","3ª Contagem","Contagem Final","Comentário","Resultado"]
-                    st.dataframe(view, use_container_width=True, hide_index=True)
-
-# ============================================================
-# BANCO DE DADOS
-# ============================================================
-if active == "Banco de Dados":
-    st.subheader(config["database_title"])
-    if config["database_subtitle"]: st.caption(config["database_subtitle"])
-    st.write("Importe os dois relatórios oficiais. O cruzamento é feito pelo **código do produto** e os números respeitam as casas decimais do relatório.")
-    col1, col2 = st.columns(2)
-    with col1:
-        cad_file = st.file_uploader(config["upload_cadastro_label"], type=["xlsx","xlsm","xltx"], key="cad_upload", help="B=Código, C=Descrição e H=Último Preço.")
-        if cad_file:
-            try:
-                st.session_state.cad_df = read_excel_file(cad_file); st.session_state.cad_name = cad_file.name
-                st.success(f"Carregado: {cad_file.name}"); st.caption(f"{len(st.session_state.cad_df):,} linhas".replace(",", "."))
-            except Exception as e: st.error(f"Não foi possível ler o cadastro: {e}")
-    with col2:
-        end_file = st.file_uploader(config["upload_endereco_label"], type=["xlsx","xlsm","xltx"], key="end_upload", help="A=Código, D=Endereço e H=Quantidade. Lote ignorado.")
-        if end_file:
-            try:
-                st.session_state.end_df = read_excel_file(end_file); st.session_state.end_name = end_file.name
-                st.success(f"Carregado: {end_file.name}"); st.caption(f"{len(st.session_state.end_df):,} linhas".replace(",", "."))
-            except Exception as e: st.error(f"Não foi possível ler o endereço: {e}")
-
-    if st.session_state.cad_df is not None and st.session_state.end_df is not None:
-        st.divider(); st.subheader(config["address_title"])
-        raw_addresses = normalize_address(st.session_state.end_df.iloc[:, 3])
-        addresses = sorted([x for x in raw_addresses.unique() if x])
-        if not st.session_state.eligible_addresses: st.session_state.eligible_addresses = addresses.copy()
-        selected = st.multiselect("Selecione os endereços que DEVEM entrar no saldo inventariável:", options=addresses,
-                                  default=[x for x in st.session_state.eligible_addresses if x in addresses],
-                                  help="Endereços não selecionados continuam no relatório, mas não entram no saldo apto.")
-        st.session_state.eligible_addresses = selected
-        a, b = st.columns(2); a.metric("Endereços encontrados", len(addresses)); b.metric("Endereços aptos", len(selected))
-        if st.button(config["process_database_text"], type="primary"):
-            try:
-                db, positions = build_database(st.session_state.cad_df, st.session_state.end_df, st.session_state.eligible_addresses)
-                st.session_state.db_df = db; st.session_state.positions_df = positions
-                st.session_state.inventories = {}; st.session_state.product_count_cycles = {}
-                st.success("Banco consolidado atualizado com sucesso. Valores numéricos preservados.")
-            except Exception as e: st.error(f"Erro no processamento: {e}")
-
-    if st.session_state.db_df is not None:
-        st.divider(); st.subheader(config["database_consolidated_title"])
-        db_view = st.session_state.db_df.copy()
-        db_view["ultimo_preco"] = db_view["ultimo_preco"].map(format_brl)
-        db_view["saldo_apto"] = db_view["saldo_apto"].map(lambda x: format_number(x, 3))
-        db_view["valor_total"] = db_view["valor_total"].map(format_brl)
-        db_view.columns = ["Código","Descrição","Último Preço","Saldo Apto","Valor Total","Classificação R$ UN.","Classificação R$ TOTAL"]
-        st.dataframe(db_view, use_container_width=True, hide_index=True, height=500)
-        csv = st.session_state.db_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(config["export_database_text"], data=csv, file_name=f"banco_consolidado_{datetime.now():%Y%m%d_%H%M%S}.csv", mime="text/csv")
-        st.caption("Regra: produto + endereço são consolidados; lotes diferentes no mesmo endereço são somados. Ex.: 613,48 permanece 613,48 e 110,135 permanece 110,135.")
-
-# ============================================================
-# REGISTRO
-# ============================================================
-if active == "Registro":
-    st.subheader(config["register_title"])
-    if config["register_subtitle"]: st.caption(config["register_subtitle"])
-    records = []
-    for inv in st.session_state.inventories.values():
-        if inv["status"] != "FECHADO": continue
-        for r in inv["rows"]:
-            records.append({
-                "Documento": inv["documento"], "Data": inv["data"], "Responsável": inv["responsavel"],
-                "Ciclo": inv["ciclo"], "Código": r["codigo"], "Descrição": r["descricao"], "Endereço": r["endereco"],
-                "Qtd. Sistema": r["qtd_sistema"], "1ª Contagem": r["primeira_contagem"], "2ª Contagem": r["segunda_contagem"],
-                "3ª Contagem": r["terceira_contagem"], "Contagem Final": r["contagem_final"], "Resultado": r["resultado_final"],
-                "Comentário": r["comentario_final"], "Valor Furo": r["valor_furo"],
-            })
-    if records:
-        df = pd.DataFrame(records)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        st.download_button("Exportar Registro CSV", df.to_csv(index=False).encode("utf-8-sig"), f"registro_inventarios_{datetime.now():%Y%m%d_%H%M%S}.csv", "text/csv")
-    else:
-        st.info("Nenhum inventário fechado nesta sessão.")
-
-# ============================================================
-# CONFIGURAÇÕES
-# ============================================================
-if active == "Configurações":
-    st.subheader(config["settings_title"])
-    st.caption("A configuração visual é separada por modo. As alterações ficam na sessão atual até conectarmos o armazenamento permanente.")
-
-    with st.expander("01 · TEMA E CONTRASTE", expanded=True):
-        theme = st.radio("Modo de tela", ["Dark", "Clean"], index=0 if config["theme_mode"] == "Dark" else 1, horizontal=True)
-        if theme != config["theme_mode"]:
-            config["theme_mode"] = theme; st.rerun()
-        st.caption("Dark = fundo escuro + textos claros. Clean = fundo claro + textos escuros.")
-
-    with st.expander("02 · TIPOGRAFIA", expanded=True):
-        fonts = ["Arial","Inter","Roboto","Poppins","Montserrat","Georgia","Verdana","Trebuchet MS"]
-        f1, f2 = st.columns(2)
-        config["font_family"] = f1.selectbox("Tipo de letra", fonts, index=fonts.index(config["font_family"]))
-        config["font_size"] = f2.slider("Tamanho geral", 12, 22, int(config["font_size"]), 1)
-        config["title_size"] = st.slider("Tamanho do título principal", 22, 48, int(config["title_size"]), 1)
-
-    with st.expander("03 · CORES", expanded=True):
-        c1, c2 = st.columns(2); config["primary_color"] = c1.color_picker("Cor principal / destaque", config["primary_color"]); config["primary_hover"] = c2.color_picker("Cor ao passar mouse", config["primary_hover"])
-        if config["theme_mode"] == "Dark":
-            c1, c2 = st.columns(2); config["background_dark"] = c1.color_picker("Fundo Dark", config["background_dark"]); config["panel_dark"] = c2.color_picker("Cards / painéis Dark", config["panel_dark"])
-            c1, c2 = st.columns(2); config["panel_dark_2"] = c1.color_picker("Painel secundário Dark", config["panel_dark_2"]); config["border_dark"] = c2.color_picker("Bordas Dark", config["border_dark"])
-            c1, c2 = st.columns(2); config["text_dark"] = c1.color_picker("Texto Dark", config["text_dark"]); config["muted_dark"] = c2.color_picker("Texto secundário Dark", config["muted_dark"])
-        else:
-            c1, c2 = st.columns(2); config["background_clean"] = c1.color_picker("Fundo Clean", config["background_clean"]); config["panel_clean"] = c2.color_picker("Cards / painéis Clean", config["panel_clean"])
-            c1, c2 = st.columns(2); config["panel_clean_2"] = c1.color_picker("Painel secundário Clean", config["panel_clean_2"]); config["border_clean"] = c2.color_picker("Bordas Clean", config["border_clean"])
-            c1, c2 = st.columns(2); config["text_clean"] = c1.color_picker("Texto Clean", config["text_clean"]); config["muted_clean"] = c2.color_picker("Texto secundário Clean", config["muted_clean"])
-
-    with st.expander("04 · LOGO / IDENTIDADE", expanded=True):
-        logo_file = st.file_uploader("Enviar logo da empresa", type=["png","jpg","jpeg","webp","svg"], key="company_logo")
-        if logo_file:
-            st.session_state.logo_bytes = logo_file.getvalue(); st.session_state.logo_name = logo_file.name
-        c1, c2, c3 = st.columns(3)
-        config["sidebar_logo_width"] = c1.slider("Largura da logo", 80, 300, int(config["sidebar_logo_width"]), 5)
-        config["sidebar_logo_height"] = c2.slider("Altura da logo", 40, 150, int(config["sidebar_logo_height"]), 5)
-        config["sidebar_logo_align"] = c3.selectbox("Alinhamento da logo", ["left","center","right"], index=["left","center","right"].index(config["sidebar_logo_align"]))
-        if st.session_state.logo_bytes:
-            st.image(st.session_state.logo_bytes, caption="Pré-visualização", width=min(config["sidebar_logo_width"], 300))
-            if st.button("Remover logo"):
-                st.session_state.logo_bytes = None; st.session_state.logo_name = ""; st.rerun()
-
-    with st.expander("05 · MENU LATERAL", expanded=True):
-        c1, c2 = st.columns(2)
-        config["menu_label"] = c1.text_input("Título do menu", config["menu_label"])
-        config["sidebar_subtitle"] = c2.text_input("Subtítulo da lateral", config["sidebar_subtitle"])
-        c1, c2 = st.columns(2); config["sidebar_align"] = c1.selectbox("Alinhamento dos tópicos", ["left","center","right"], index=["left","center","right"].index(config["sidebar_align"]))
-        config["sidebar_font_size"] = c2.slider("Tamanho da letra dos tópicos", 10, 20, int(config["sidebar_font_size"]), 1)
-        config["sidebar_item_height"] = st.slider("Altura dos botões", 30, 60, int(config["sidebar_item_height"]), 1)
-        c1, c2 = st.columns(2)
-        config["dashboard_label"] = c1.text_input("Dashboard", config["dashboard_label"])
-        config["inventory_label"] = c2.text_input("Inventário", config["inventory_label"])
-        c1, c2 = st.columns(2)
-        config["database_label"] = c1.text_input("Banco de Dados", config["database_label"])
-        config["register_label"] = c2.text_input("Registro", config["register_label"])
-        config["settings_label"] = st.text_input("Configurações", config["settings_label"])
-
-    with st.expander("06 · TEXTOS DAS PÁGINAS", expanded=False):
-        fields = [("app_title","Título principal"),("app_subtitle","Subtítulo principal"),("footer_text","Rodapé"),("dashboard_title","Título do Dashboard"),("dashboard_subtitle","Subtítulo do Dashboard"),("inventory_title","Título do Inventário"),("inventory_subtitle","Subtítulo do Inventário"),("database_title","Título do Banco de Dados"),("database_subtitle","Subtítulo do Banco de Dados"),("register_title","Título do Registro"),("register_subtitle","Subtítulo do Registro"),("address_title","Título da configuração de endereços"),("database_consolidated_title","Título do banco consolidado")]
-        for i in range(0, len(fields), 2):
-            cols = st.columns(2)
-            for col, (key, label) in zip(cols, fields[i:i+2]): config[key] = col.text_input(label, config[key], key=f"cfg_{key}")
-
-    with st.expander("07 · BOTÕES E INVENTÁRIO", expanded=True):
-        config["new_inventory_text"] = st.text_input("Botão Novo Inventário", config["new_inventory_text"])
-        config["process_database_text"] = st.text_input("Botão Processar Banco", config["process_database_text"])
-        config["export_database_text"] = st.text_input("Botão Exportar Banco", config["export_database_text"])
-        config["inventory_default_blind"] = st.checkbox("Usar contagem cega por padrão", value=bool(config["inventory_default_blind"]))
-        st.caption("A contagem cega pode ser alterada ao criar cada inventário.")
-
-    with st.expander("08 · DIMENSIONAMENTO", expanded=False):
-        config["sidebar_width"] = st.slider("Largura do menu lateral", 220, 360, int(config["sidebar_width"]), 5)
-        config["show_footer"] = st.checkbox("Exibir rodapé no menu", value=bool(config["show_footer"]))
-
-    st.divider()
-    c1, c2 = st.columns(2)
-    if c1.button("Aplicar alterações visuais", type="primary", use_container_width=True): st.rerun()
-    if c2.button("Restaurar configuração padrão", use_container_width=True):
-        st.session_state.ui_config = DEFAULT_CONFIG.copy(); st.session_state.logo_bytes = None; st.session_state.logo_name = ""; st.rerun()
+# Settings
+elif active=='Configurações':
+ st.subheader('Configurações');st.caption('Agora as configurações são gravadas em armazenamento local do aplicativo. Cada grupo abaixo é independente.')
+ with st.expander('01 · TEMA',True):
+  t=st.radio('Modo',['Dark','Clean'],index=0 if cfg['theme']=='Dark' else 1,horizontal=True)
+  if t!=cfg['theme']:cfg['theme']=t;persist_cfg();st.rerun()
+ with st.expander('02 · TIPOGRAFIA',True):
+  fonts=['Arial','Inter','Roboto','Poppins','Montserrat','Georgia','Verdana','Trebuchet MS'];a,b=st.columns(2);cfg['font']=a.selectbox('Tipo de letra',fonts,index=fonts.index(cfg['font']));cfg['font_size']=b.slider('Tamanho geral',12,22,cfg['font_size']);cfg['title_size']=st.slider('Tamanho do título',22,48,cfg['title_size'])
+ with st.expander('03 · CORES',True):
+  a,b=st.columns(2);cfg['primary']=a.color_picker('Cor principal',cfg['primary']);cfg['hover']=b.color_picker('Cor ao passar o mouse',cfg['hover']);keys=['dark_bg','dark_panel','dark_panel2','dark_border','dark_text','dark_muted'] if cfg['theme']=='Dark' else ['clean_bg','clean_panel','clean_panel2','clean_border','clean_text','clean_muted'];labs=['Fundo','Painéis','Painel secundário','Bordas','Texto','Texto secundário'];a,b=st.columns(2)
+  for i,k in enumerate(keys):
+   cfg[k]=(a if i%2==0 else b).color_picker(labs[i],cfg[k],key='cp_'+k)
+  # widgets acima atualizam seus próprios valores no próximo rerun; abaixo usamos uma forma direta para os seis campos
+  for k in keys:
+   if k not in cfg:cfg[k]=DEFAULT[k]
+ with st.expander('04 · LOGO',True):
+  f=st.file_uploader('Logo da empresa',type=['png','jpg','jpeg','webp','svg'],key='logo_up')
+  if f:st.session_state.logo=(f.getvalue(),f.name);save('logo',st.session_state.logo)
+  a,b,c=st.columns(3);cfg['logo_w']=a.slider('Largura',80,320,cfg['logo_w']);cfg['logo_h']=b.slider('Altura',40,180,cfg['logo_h']);cfg['logo_align']=c.selectbox('Alinhamento',['left','center','right'],index=['left','center','right'].index(cfg['logo_align']));cfg['logo_top']=st.slider('Subir / descer logo',-100,100,cfg['logo_top'])
+  if st.session_state.logo[0]:st.image(st.session_state.logo[0],width=min(cfg['logo_w'],320));
+  if st.button('Remover logo'):st.session_state.logo=(None,'');save('logo',st.session_state.logo);st.rerun()
+ with st.expander('05 · ELEMENTOS DA LATERAL — INDEPENDENTES',True):
+  cfg['sidebar_sub']=st.text_input('Texto abaixo da logo',cfg['sidebar_sub']);cfg['sub_top']=st.slider('Posição do subtítulo',-60,100,cfg['sub_top']);cfg['menu']=st.text_input('Título do menu',cfg['menu']);cfg['menu_top']=st.slider('Posição do título MENU',-60,100,cfg['menu_top']);cfg['gap']=st.slider('Espaço antes do MENU',0,60,cfg['gap']);cfg['sidebar_align']=st.selectbox('Alinhamento dos tópicos',['left','center','right'],index=['left','center','right'].index(cfg['sidebar_align']));cfg['sidebar_font']=st.slider('Tamanho dos tópicos',10,22,cfg['sidebar_font']);cfg['item_h']=st.slider('Altura dos tópicos',30,70,cfg['item_h']);cfg['icon_color']=st.color_picker('Cor dos ícones',cfg['icon_color'])
+  a,b=st.columns(2);cfg['dash_top']=a.slider('Dashboard — posição',-30,50,cfg['dash_top']);cfg['inv_top']=b.slider('Inventário — posição',-30,50,cfg['inv_top']);a,b=st.columns(2);cfg['db_top']=a.slider('Banco — posição',-30,50,cfg['db_top']);cfg['reg_top']=b.slider('Registro — posição',-30,50,cfg['reg_top']);cfg['settings_top']=st.slider('Configurações — posição',-30,50,cfg['settings_top'])
+  st.caption('Cada tópico pode ter sua própria posição vertical.')
+  for k,l in [('dash','Dashboard'),('inv','Inventário Rotativo'),('db','Banco de Dados'),('reg','Registro'),('settings','Configurações')]:cfg[k]=st.text_input(l,cfg[k],key='menu_'+k)
+ with st.expander('06 · TEXTOS DAS PÁGINAS',False):
+  for k,l in [('title','Título principal'),('subtitle','Subtítulo principal'),('dashboard_title','Título Dashboard'),('inventory_title','Título Inventário'),('database_title','Título Banco'),('register_title','Título Registro')]:cfg[k]=st.text_input(l,cfg.get(k,DEFAULT.get(k,'')),key='pg_'+k)
+ with st.expander('07 · INVENTÁRIO',True):cfg['blind_default']=st.checkbox('Contagem cega por padrão',cfg['blind_default'])
+ if st.button('SALVAR TODAS AS CONFIGURAÇÕES',type='primary',use_container_width=True):persist_cfg();st.success('Configurações salvas.');st.rerun()
+ if st.button('RESTAURAR PADRÃO'):st.session_state.cfg=DEFAULT.copy();persist_cfg();st.rerun()

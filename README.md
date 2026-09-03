@@ -1,37 +1,19 @@
-# Sistema Operacional — Inventário Rotativo
+# Sistema Operacional — Inventário Rotativo V5
 
-Versão de teste com identidade visual Setta configurável, banco de dados corrigido para números decimais e primeiro fluxo funcional do Inventário Rotativo.
+- Base: ESTOQUE ANALÍTICO + ENDEREÇO.
+- ESTOQUE ANALÍTICO: A Código, D Descrição, H Quantidade/Saldo, K Valor em Estoque.
+- Valor unitário = K ÷ H.
+- R$ UN = ranking por valor unitário.
+- R$ TOTAL = ranking pelo valor K do relatório analítico.
+- Valor Total Apto = Saldo Apto × Valor Unitário.
+- ENDEREÇO: A Código, D Endereço, H Quantidade; lotes somados por produto/endereço.
+- Endereços com pesquisa e checkboxes, sem tags vermelhas.
+- Dark/Clean, fontes, cores, logo, posições e textos configuráveis.
+- Sidebar: controle nativo de recolher/abrir não é reposicionado.
+- Inventário: primeira contagem, recontagem individual, RECONTAR TODOS, auditoria individual/todos e novas rodadas sem limite.
+- Histórico completo das contagens por posição.
+- Configurações, banco consolidado, inventários e ciclos são gravados em SQLite local para não depender apenas do session_state.
 
-## Correção crítica dos números
-A leitura agora preserva formatos como:
-- `613,48` → 613,48
-- `613.48` → 613,48
-- `110,135` → 110,135
-- `1.234,56` → 1.234,56
+## Persistência em nuvem
 
-Isso evita transformar 613,48 em 61.348 ou 110,135 em 110.135.
-
-## Inventário Rotativo
-- Novo inventário com documento `DDMMAAAA-NNN`.
-- Seleção de N produtos distintos.
-- Metade priorizada por R$ UN. e metade por R$ TOTAL, eliminando duplicidades.
-- Rotação por ciclo: produtos menos contados têm prioridade.
-- Expansão por produto × endereço apto.
-- Contagem cega ou não cega.
-- Comentário opcional; vazio é salvo como `SC`.
-- Fechamento da 1ª contagem → análise do gestor.
-- 2ª contagem seletiva.
-- Se 2ª = 1ª: erro de inventário.
-- Se 2ª = sistema: sistema confirmado.
-- Se as três quantidades forem diferentes: gestor pode fechar com 1ª/2ª ou solicitar auditoria.
-- Auditoria como 3ª contagem.
-- Registro dos inventários fechados.
-
-## Identidade visual
-- Dark / Clean com contraste automático.
-- Logo configurável.
-- Fonte, tamanhos, cores, alinhamentos e textos editáveis.
-- Sidebar sem forçar display/posição, permitindo o controle nativo do Streamlit funcionar corretamente.
-
-## Limitação desta fase
-Os dados ficam em `session_state`, portanto ainda não são permanentes entre sessões/usuários. A próxima etapa pode migrar inventários, configurações e registro para Supabase/PostgreSQL.
+O SQLite resolve a perda causada por reexecuções/navegação dentro do mesmo ambiente. O Streamlit Community Cloud pode recriar o ambiente em reinícios/redeploys; para persistência definitiva em nuvem, conectar o projeto ao Supabase/PostgreSQL é a próxima etapa.
