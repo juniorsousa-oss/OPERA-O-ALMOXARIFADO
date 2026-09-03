@@ -150,12 +150,31 @@ html, body, [class*="css"], .stApp {{
 }}
 
 [data-testid="stHeader"] {{ background: var(--app-bg); }}
-[data-testid="stToolbar"] {{ visibility: hidden; }}
+[data-testid="stToolbar"] {{ visibility: visible; }}
 
 section[data-testid="stSidebar"] {{
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
     background: {sidebar_bg};
     border-right: 1px solid var(--app-border);
+    min-width: {sidebar_width}px !important;
     width: {sidebar_width}px !important;
+    max-width: {sidebar_width}px !important;
+    z-index: 999999 !important;
+}}
+
+/* Mantém o controle nativo do Streamlit para abrir/fechar a lateral */
+[data-testid="stSidebarCollapsedControl"] {{
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 1000000 !important;
+}}
+
+[data-testid="stSidebarCollapseButton"] {{
+    display: flex !important;
+    visibility: visible !important;
 }}
 section[data-testid="stSidebar"] > div {{ padding-top: 1rem; }}
 
