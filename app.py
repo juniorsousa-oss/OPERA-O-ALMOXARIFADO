@@ -397,7 +397,7 @@ elif active=='Registro':
   for r in inv['rows']:
    rows.append({'Documento':inv['documento'],'Data':inv['data'],'Responsável':inv['responsavel'],'Ciclo':inv['ciclo'],'Código':r['codigo'],'Descrição':r['descricao'],'Endereço':r['endereco'],'Qtd. Sistema':r['qtd_sistema'],'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),'Contagem Final':r['contagem_final'],'Resultado':r['resultado_final'],'Valor Divergência':divergencia_valor(r,r['contagem_final']) if r['contagem_final'] is not None else 0})
  if rows:
-  df=pd.DataFrame(rows);st.dataframe(df,use_container_width=True,hide_index=True);export_df=df.copy();export_df['Valor Divergência']=export_df['Valor Divergência'].map(signed_brl);st.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  df=pd.DataFrame(rows);display_df=df.copy();display_df['Valor Divergência']=display_df['Valor Divergência'].map(signed_brl);st.dataframe(display_df,use_container_width=True,hide_index=True);export_df=display_df.copy();st.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
  else:st.info('Nenhum inventário fechado.')
 
 # Reportar Inconsistências
@@ -412,7 +412,7 @@ elif active=='Reportar Inconsistências':
    with st.container(border=True):
     st.markdown('#### Novo chamado de inconsistência')
     st.info('O material reportado será incluído automaticamente no próximo Inventário Rotativo.')
-    codes=sorted(st.session_state.db.loc[st.session_state.db.saldo_apto>0,'codigo'].astype(str).unique())
+    codes=sorted(st.session_state.db['codigo'].astype(str).unique())
     addresses=sorted([str(x) for x in st.session_state.eligible if str(x).strip()])
     a,b=st.columns(2)
     equipe=a.selectbox('Equipe responsável',['INVENTÁRIO ROTATIVO'])
