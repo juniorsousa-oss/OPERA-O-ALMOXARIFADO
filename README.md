@@ -1,41 +1,37 @@
 # Sistema Operacional — Inventário Rotativo
 
-Versão com identidade visual configurável e base do módulo de Inventário Rotativo.
+Versão de teste com identidade visual Setta configurável, banco de dados corrigido para números decimais e primeiro fluxo funcional do Inventário Rotativo.
 
-## Novidades desta versão
+## Correção crítica dos números
+A leitura agora preserva formatos como:
+- `613,48` → 613,48
+- `613.48` → 613,48
+- `110,135` → 110,135
+- `1.234,56` → 1.234,56
 
-- Tema **Dark** e **Clean** com contraste automático.
-- Aba **Configurações**.
-- Upload de logo da empresa; a escrita fixa da lateral foi removida.
-- Configuração de tipo de letra e tamanhos.
-- Configuração de cores de fundo, painéis, bordas e textos para cada tema.
-- Configuração dos nomes do menu e dos principais textos das páginas.
-- Configuração dos textos dos botões.
-- Configuração da largura do menu lateral.
-- Restauração da configuração padrão.
+Isso evita transformar 613,48 em 61.348 ou 110,135 em 110.135.
 
-> Nesta versão, as configurações ficam na sessão atual do aplicativo. Para persistência definitiva, a próxima etapa pode gravá-las em PostgreSQL/Supabase.
+## Inventário Rotativo
+- Novo inventário com documento `DDMMAAAA-NNN`.
+- Seleção de N produtos distintos.
+- Metade priorizada por R$ UN. e metade por R$ TOTAL, eliminando duplicidades.
+- Rotação por ciclo: produtos menos contados têm prioridade.
+- Expansão por produto × endereço apto.
+- Contagem cega ou não cega.
+- Comentário opcional; vazio é salvo como `SC`.
+- Fechamento da 1ª contagem → análise do gestor.
+- 2ª contagem seletiva.
+- Se 2ª = 1ª: erro de inventário.
+- Se 2ª = sistema: sistema confirmado.
+- Se as três quantidades forem diferentes: gestor pode fechar com 1ª/2ª ou solicitar auditoria.
+- Auditoria como 3ª contagem.
+- Registro dos inventários fechados.
 
-## Banco de Dados
+## Identidade visual
+- Dark / Clean com contraste automático.
+- Logo configurável.
+- Fonte, tamanhos, cores, alinhamentos e textos editáveis.
+- Sidebar sem forçar display/posição, permitindo o controle nativo do Streamlit funcionar corretamente.
 
-### CADASTROS
-- B: Código do produto
-- C: Descrição
-- H: Último Preço
-
-### ENDEREÇO
-- A: Código do produto
-- D: Endereço
-- H: Quantidade
-- Lote ignorado nesta primeira versão
-
-### Regras
-1. Código do produto é a chave de relacionamento.
-2. Produto + endereço são consolidados em uma posição.
-3. Lotes diferentes no mesmo endereço são somados.
-4. Endereços são parametrizáveis como aptos/não aptos.
-5. Saldo apto considera somente endereços selecionados.
-6. Valor total = saldo apto × último preço.
-7. Classificação R$ UN. = ranking decrescente pelo último preço.
-8. Classificação R$ TOTAL = ranking decrescente pelo valor total.
-9. Banco de produtos apresenta uma linha por produto.
+## Limitação desta fase
+Os dados ficam em `session_state`, portanto ainda não são permanentes entre sessões/usuários. A próxima etapa pode migrar inventários, configurações e registro para Supabase/PostgreSQL.
