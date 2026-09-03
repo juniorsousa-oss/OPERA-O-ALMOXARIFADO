@@ -5,10 +5,177 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Inventário Rotativo | Operacional",
+    page_title="Gestão Almoxarifado | Inventário Rotativo",
     page_icon="📦",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# -----------------------------
+# Visual / identidade
+# -----------------------------
+st.markdown("""
+<style>
+:root {
+    --setta-yellow: #FFD63B;
+    --setta-yellow-2: #F7C928;
+    --setta-bg: #080B0A;
+    --setta-panel: #101614;
+    --setta-panel-2: #141A17;
+    --setta-border: #2B3732;
+    --setta-text: #F4F5F2;
+    --setta-muted: #A9B1AC;
+}
+
+.stApp { background: var(--setta-bg); color: var(--setta-text); }
+[data-testid="stHeader"] { background: var(--setta-bg); }
+[data-testid="stToolbar"] { visibility: hidden; }
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: #070A09;
+    border-right: 1px solid #26302C;
+}
+section[data-testid="stSidebar"] > div { padding-top: 1.2rem; }
+
+.setta-logo {
+    font-size: 42px;
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: -2px;
+    color: #F5F5F2;
+    margin: 4px 0 2px 4px;
+}
+.setta-logo span { color: var(--setta-yellow); }
+.setta-sub {
+    color: #7F8984;
+    font-size: 12px;
+    margin: 0 0 28px 7px;
+}
+
+/* Main title */
+.main-title {
+    font-size: 31px;
+    line-height: 1.1;
+    font-weight: 800;
+    margin: 5px 0 2px 0;
+    color: #F7F7F4;
+}
+.main-subtitle {
+    color: var(--setta-muted);
+    font-size: 14px;
+    margin-bottom: 22px;
+}
+.section-label {
+    color: var(--setta-yellow);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: .6px;
+    margin: 14px 0 9px 0;
+}
+
+/* Sidebar navigation buttons */
+section[data-testid="stSidebar"] .stButton > button {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: #C9CFCC;
+    text-align: left;
+    font-weight: 700;
+    border-radius: 9px;
+    min-height: 42px;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: #171D1A;
+    color: white;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: var(--setta-yellow);
+    color: #11130F;
+}
+
+/* Cards / metrics */
+[data-testid="stMetric"] {
+    background: linear-gradient(135deg, #111714, #0D1210);
+    border: 1px solid var(--setta-border);
+    border-radius: 14px;
+    padding: 17px 19px;
+    min-height: 105px;
+}
+[data-testid="stMetricLabel"] p {
+    color: #AEB7B2 !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+}
+[data-testid="stMetricValue"] { color: #F5F5F2; }
+
+/* Containers */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #0F1512;
+    border-color: var(--setta-border) !important;
+    border-radius: 14px;
+}
+
+/* Buttons */
+.stButton > button, .stDownloadButton > button {
+    border-radius: 8px;
+    font-weight: 800;
+    border: 1px solid var(--setta-border);
+    background: #151C18;
+    color: #F4F5F2;
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+    border-color: var(--setta-yellow);
+    color: var(--setta-yellow);
+}
+.stButton > button[kind="primary"] {
+    background: var(--setta-yellow);
+    color: #10120F;
+    border-color: var(--setta-yellow);
+}
+.stButton > button[kind="primary"]:hover {
+    background: var(--setta-yellow-2);
+    color: #10120F;
+}
+
+/* Inputs */
+.stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div,
+.stMultiSelect div[data-baseweb="select"] > div {
+    background: #111714 !important;
+    color: #F5F5F2 !important;
+    border-color: #34413B !important;
+}
+label, .stMarkdown p, .stCaption { color: #D2D7D4; }
+
+/* Dataframe */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--setta-border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* Tabs (kept for compatibility, yellow active line) */
+button[data-baseweb="tab"] { color: #AEB7B2 !important; font-weight: 700; }
+button[data-baseweb="tab"][aria-selected="true"] { color: var(--setta-yellow) !important; }
+[role="tablist"] { border-bottom: 1px solid #26312C; }
+
+hr { border-color: #26312C !important; }
+
+/* Alerts */
+div[data-testid="stAlert"] { border-radius: 10px; }
+
+.footer-note {
+    position: fixed;
+    bottom: 12px;
+    left: 18px;
+    color: #59645F;
+    font-size: 10px;
+    line-height: 1.35;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # -----------------------------
 # Helpers
@@ -119,25 +286,36 @@ for k, v in defaults.items():
         st.session_state[k] = v
 
 # -----------------------------
-# Header
+# Header / Navigation
 # -----------------------------
-st.title("📦 Sistema Operacional — Inventário Rotativo")
-st.caption("Versão inicial • Base de dados e parametrização do estoque")
+if "active_section" not in st.session_state:
+    st.session_state.active_section = "Dashboard"
 
-# -----------------------------
-# Navigation
-# -----------------------------
-tab_dash, tab_inv, tab_db, tab_reg = st.tabs([
-    "📊 Dashboard",
-    "📋 Inventário Rotativo",
-    "🗄️ Banco de Dados",
-    "📑 Registro",
-])
+with st.sidebar:
+    st.markdown('<div class="setta-logo">Set<span>ta</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="setta-sub">SISTEMA OPERACIONAL DE ESTOQUE</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-label">MENU</div>', unsafe_allow_html=True)
+    nav_items = [
+        ("Dashboard", "▦  DASHBOARD"),
+        ("Inventário Rotativo", "✎  INVENTÁRIO ROTATIVO"),
+        ("Banco de Dados", "▣  BANCO DE DADOS"),
+        ("Registro", "◷  REGISTRO"),
+    ]
+    for key, label in nav_items:
+        st.button(label, key=f"nav_{key}", type="primary" if st.session_state.active_section == key else "secondary",
+                  on_click=lambda k=key: st.session_state.update(active_section=k))
+
+    st.markdown('<div class="footer-note">SETTA ENERGY<br>Sistema Operacional • Almoxarifado</div>', unsafe_allow_html=True)
+
+active = st.session_state.active_section
+st.markdown('<div class="main-title">GESTÃO ALMOXARIFADO</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-subtitle">01 · ACURÁCIA DE ESTOQUE &nbsp;|&nbsp; Inventário Rotativo</div>', unsafe_allow_html=True)
 
 # -----------------------------
 # Dashboard
 # -----------------------------
-with tab_dash:
+if active == "Dashboard":
     st.subheader("Dashboard")
     db = st.session_state.db_df
 
@@ -170,7 +348,7 @@ with tab_dash:
 # -----------------------------
 # Inventory
 # -----------------------------
-with tab_inv:
+if active == "Inventário Rotativo":
     st.subheader("Inventário Rotativo")
     st.button("＋ Novo Inventário", type="primary", disabled=st.session_state.db_df is None)
 
@@ -183,7 +361,7 @@ with tab_inv:
 # -----------------------------
 # Database
 # -----------------------------
-with tab_db:
+if active == "Banco de Dados":
     st.subheader("Banco de Dados")
     st.write("Importe os dois relatórios oficiais. Nesta versão, o cruzamento é feito pelo **código do produto**.")
 
@@ -288,7 +466,7 @@ with tab_db:
 # -----------------------------
 # Register
 # -----------------------------
-with tab_reg:
+if active == "Registro":
     st.subheader("Registro")
     st.info("O registro histórico será alimentado automaticamente após o fechamento dos inventários. A estrutura detalhada será construída junto com o fluxo de contagem.")
 
