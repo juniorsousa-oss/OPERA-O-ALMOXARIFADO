@@ -40,6 +40,24 @@ if 'profile' not in st.session_state: st.session_state.profile='Operador'
 cfg=st.session_state.cfg
 config=cfg
 
+# Compatibility defaults: preserve older saved settings while supporting the V5 UI keys.
+_cfg_defaults = {
+    'sidebar_subtitle':'SISTEMA OPERACIONAL DE ESTOQUE',
+    'menu_label':'MENU',
+    'dashboard_label':'DASHBOARD',
+    'inventory_label':'INVENTÁRIO ROTATIVO',
+    'database_label':'BANCO DE DADOS',
+    'register_label':'REGISTRO',
+    'settings_label':'CONFIGURAÇÕES',
+    'new_inventory_text':'NOVO INVENTÁRIO',
+    'address_title':'ENDEREÇOS ELEGÍVEIS',
+    'sidebar_width':250,
+}
+for _k, _v in _cfg_defaults.items():
+    config.setdefault(_k, _v)
+    cfg.setdefault(_k, _v)
+
+
 def persist_cfg(): save('cfg',cfg)
 def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
 def persist_db(): save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
