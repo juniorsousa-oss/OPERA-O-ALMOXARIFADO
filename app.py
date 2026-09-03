@@ -104,11 +104,11 @@ section[data-testid="stSidebar"]{{background:var(--bg);border-right:1px solid va
 /* Controle nativo de abrir/recolher: não reposicionar */
 .logo-area{{height:{cfg['logo_h']+25}px;display:flex;align-items:center;justify-content:{cfg['logo_align']};transform:translateY({cfg['logo_top']}px);padding:0 8px;overflow:hidden}}.logo-area img{{width:{cfg['logo_w']}px;height:{cfg['logo_h']}px;object-fit:contain;display:block}}
 .sidebar-sub{{color:var(--muted);font-size:11px;text-align:{cfg['sidebar_align']};transform:translateY({cfg['sub_top']}px);margin:0 7px {max(4,cfg['gap'])}px}}.menu-label{{color:var(--p);font-weight:800;font-size:12px;margin:0 7px 8px;transform:translateY({cfg['menu_top']}px);text-align:{cfg['sidebar_align']}}}
-section[data-testid="stSidebar"] .stButton{{margin-bottom:{cfg.get('menu_gap',8)}px}}section[data-testid="stSidebar"] .stButton>button{{width:100%;min-height:{cfg['item_h']}px;border:1px solid var(--border);background:var(--panel);color:var(--text);text-align:{cfg['sidebar_align']};justify-content:{'flex-start' if cfg['sidebar_align']=='left' else 'center' if cfg['sidebar_align']=='center' else 'flex-end'};font-size:{cfg['sidebar_font']}px;font-weight:800;border-radius:9px;padding:0 14px;box-shadow:0 1px 3px rgba(0,0,0,.18)}}section[data-testid="stSidebar"] .stButton>button:hover{{background:var(--p2);color:var(--text);border-color:var(--p)}}section[data-testid="stSidebar"] .stButton>button[kind="primary"]{{background:var(--p);color:#11130F;border-color:var(--p);box-shadow:0 2px 7px rgba(0,0,0,.22)}}section[data-testid="stSidebar"] .stButton>button::first-letter{{color:{cfg['icon_color']}}}
+section[data-testid="stSidebar"] .stButton{{margin-bottom:{cfg.get('menu_gap',4)}px}}section[data-testid="stSidebar"] .stButton>button{{width:100%;min-height:{cfg['item_h']}px;border:1px solid var(--border);background:var(--panel);color:var(--text);text-align:{cfg['sidebar_align']};justify-content:{'flex-start' if cfg['sidebar_align']=='left' else 'center' if cfg['sidebar_align']=='center' else 'flex-end'};font-size:{cfg['sidebar_font']}px;font-weight:800;border-radius:9px;padding:0 14px;box-shadow:0 1px 3px rgba(0,0,0,.18)}}section[data-testid="stSidebar"] .stButton>button:hover{{background:var(--p2);color:var(--text);border-color:var(--p)}}section[data-testid="stSidebar"] .stButton>button[kind="primary"]{{background:var(--p);color:#11130F;border-color:var(--p);box-shadow:0 2px 7px rgba(0,0,0,.22)}}section[data-testid="stSidebar"] .stButton>button::first-letter{{color:{cfg['icon_color']}}}
 .main-title{{font-size:{cfg['title_size']}px;font-weight:800;line-height:1.1;color:var(--text);margin:5px 0 2px}}.main-subtitle{{color:var(--muted);font-size:14px;margin-bottom:22px}}
 [data-testid="stMetric"]{{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px 19px;min-height:105px}}[data-testid="stMetricLabel"] p{{color:var(--muted)!important;font-size:11px!important;font-weight:800!important;letter-spacing:.5px;text-transform:uppercase}}[data-testid="stMetricValue"]{{color:var(--text)}}
 div[data-testid="stVerticalBlockBorderWrapper"]{{background:var(--panel);border-color:var(--border)!important;border-radius:14px}}.stButton>button,.stDownloadButton>button{{border-radius:8px;font-weight:800;border:1px solid var(--border);background:var(--p2);color:var(--text)}}.stButton>button:hover,.stDownloadButton>button:hover{{border-color:var(--p);color:var(--p)}}.stButton>button[kind="primary"]{{background:var(--p);color:#10120F;border-color:var(--p)}}label,.stMarkdown p,.stCaption,.stRadio label,.stCheckbox label{{color:var(--text)!important}}input,textarea{{color:var(--text)!important}}[data-testid="stDataFrame"]{{border:1px solid var(--border);border-radius:10px;overflow:hidden}}[data-testid="stVegaLiteChart"] svg rect[fill]{{fill:var(--p)!important}}[data-testid="stVegaLiteChart"] svg path[fill]{{fill:var(--p)!important}}[data-testid="stVegaLiteChart"] svg rect[stroke]{{stroke:var(--p)!important}}
-section[data-testid="stSidebar"] .sidebar-report-spacer{{height:clamp(140px,34vh,320px)}}section[data-testid="stSidebar"] .sidebar-report-area{{margin:0 7px}}</style>''',unsafe_allow_html=True)
+section[data-testid="stSidebar"] .sidebar-report-spacer{{height:clamp(60px,10vh,90px)}}section[data-testid="stSidebar"] .sidebar-report-area{{margin:0 7px}}</style>''',unsafe_allow_html=True)
 css()
 
 def ncode(s): return s.astype('string').fillna('').str.strip().str.replace(r'\.0$','',regex=True).str.zfill(8)
@@ -205,7 +205,6 @@ with st.sidebar:
   st.markdown(f'<div style="height:0;margin-top:{off}px"></div>',unsafe_allow_html=True)
   if st.button(l,key='nav_'+k,type='primary' if st.session_state.section==k else 'secondary'):st.session_state.section=k;st.rerun()
  st.markdown('<div class="sidebar-report-spacer"></div>',unsafe_allow_html=True)
- st.markdown('<div class="sidebar-report-caption">CONTROLE DE INCONSISTÊNCIAS</div>',unsafe_allow_html=True)
  off=cfg.get('report_top',0)
  st.markdown(f'<div style="height:0;margin-top:{off}px"></div>',unsafe_allow_html=True)
  if st.button(f'⚠  {config["report_label"]}',key='nav_Reportar Inconsistências',type='primary' if st.session_state.section=='Reportar Inconsistências' else 'secondary'):
@@ -226,16 +225,30 @@ if active=='Dashboard':
   st.markdown('#### Indicadores visuais')
   ch1,ch2=st.columns(2)
   with ch1:
-   status_df=pd.DataFrame({'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div]},index=['Sem divergência','Com divergência'])
-   st.bar_chart(status_df,use_container_width=True,height=260)
+   import altair as alt
+   status_df=pd.DataFrame({'Status':['Sem divergência','Com divergência'],'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div]})
+   chart1=alt.Chart(status_df).mark_bar(cornerRadiusTopLeft=7,cornerRadiusTopRight=7,size=72).encode(
+    x=alt.X('Status:N',sort=['Sem divergência','Com divergência'],axis=alt.Axis(title=None,labelAngle=0)),
+    y=alt.Y('Quantidade:Q',axis=alt.Axis(title=None,grid=True)),
+    color=alt.Color('Status:N',scale=alt.Scale(domain=['Sem divergência','Com divergência'],range=['#FFD63B','#D95C5C']),legend=None),
+    tooltip=[alt.Tooltip('Status:N',title='Status'),alt.Tooltip('Quantidade:Q',title='Posições')]
+   ).properties(height=260)
+   st.altair_chart(chart1,use_container_width=True)
   with ch2:
    inv_rows=[]
    for x in sorted(st.session_state.inventories.values(),key=lambda z:z.get('criado_em','')):
-    total=sum(1 for r in x['rows'] if r['contagens']); dv=sum(1 for r in x['rows'] if r['contagens'] and abs(diff(r,last(r)))>1e-9)
-    if total:inv_rows.append({'Inventário':x['documento'],'Contabilizadas':total,'Divergentes':dv})
+    total=sum(1 for r in x['rows'] if r['contagens']);dv=sum(1 for r in x['rows'] if r['contagens'] and abs(diff(r,last(r)))>1e-9)
+    if total:inv_rows.extend([{'Inventário':x['documento'],'Status':'Contabilizadas','Quantidade':total},{'Inventário':x['documento'],'Status':'Divergentes','Quantidade':dv}])
    if inv_rows:
-    chart=pd.DataFrame(inv_rows).set_index('Inventário')
-    st.bar_chart(chart,use_container_width=True,height=260)
+    chart=pd.DataFrame(inv_rows)
+    chart2=alt.Chart(chart).mark_bar(cornerRadiusTopLeft=5,cornerRadiusTopRight=5,size=26).encode(
+     x=alt.X('Inventário:N',axis=alt.Axis(title=None,labelAngle=-45)),
+     y=alt.Y('Quantidade:Q',axis=alt.Axis(title=None,grid=True)),
+     xOffset=alt.XOffset('Status:N'),
+     color=alt.Color('Status:N',scale=alt.Scale(domain=['Contabilizadas','Divergentes'],range=['#FFD63B','#D95C5C']),legend=alt.Legend(title=None,orient='bottom')),
+     tooltip=[alt.Tooltip('Inventário:N',title='Inventário'),alt.Tooltip('Status:N',title='Status'),alt.Tooltip('Quantidade:Q',title='Posições')]
+    ).properties(height=260)
+    st.altair_chart(chart2,use_container_width=True)
    else:
     st.info('Ainda não existem contagens para gerar o gráfico por inventário.')
 
