@@ -1,6 +1,9 @@
 name: Patch layout and inconsistency reports
 
 on:
+  push:
+    paths:
+      - '.github/patch_layout_reports.py'
   workflow_dispatch:
 
 permissions:
