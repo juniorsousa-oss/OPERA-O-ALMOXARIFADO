@@ -244,7 +244,7 @@ elif active=='Inventário Rotativo':
      if q2 is None:
       continue
      with st.container(border=True):
-      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1)}** · Atual: **{fn(q2)}**')
+      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1) if q1 is not None else "—"}** · Atual: **{fn(q2)}**')
       if q1 is not None and abs(q2-q1)<1e-9:
        st.success('Atual igual à anterior: ERRO DE INVENTÁRIO. Terceira contagem não é necessária.');r['contagem_final']=q2;r['resultado_final']='ERRO DE INVENTÁRIO';r['status']='FINALIZADO';persist_inv(inv)
       elif abs(q2-r['qtd_sistema'])<1e-9:
