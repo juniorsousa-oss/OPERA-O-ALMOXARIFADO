@@ -11,8 +11,8 @@ DEFAULT={
  'primary':'#FFD63B','hover':'#F7C928','icon_color':'#FFD63B','dark_bg':'#080B0A','dark_panel':'#101614','dark_panel2':'#141A17','dark_border':'#2B3732','dark_text':'#F4F5F2','dark_muted':'#A9B1AC',
  'clean_bg':'#F5F6F4','clean_panel':'#FFFFFF','clean_panel2':'#F0F2EF','clean_border':'#D8DDD9','clean_text':'#161A18','clean_muted':'#626B66',
  'title':'GESTÃO ALMOXARIFADO','subtitle':'01 · ACURÁCIA DE ESTOQUE  |  Inventário Rotativo','sidebar_sub':'SISTEMA OPERACIONAL DE ESTOQUE','menu':'MENU',
- 'dash':'DASHBOARD','inv':'INVENTÁRIO ROTATIVO','db':'BANCO DE DADOS','reg':'REGISTRO','settings':'CONFIGURAÇÕES',
- 'sidebar_width':250,'logo_w':190,'logo_h':70,'logo_align':'center','logo_top':-10,'sub_top':0,'menu_top':0,'sidebar_align':'left','sidebar_font':12,'item_h':42,'gap':8,'dash_top':0,'inv_top':0,'db_top':0,'reg_top':0,'settings_top':0,'show_footer':True,
+ 'dash':'DASHBOARD','inv':'INVENTÁRIO ROTATIVO','db':'BANCO DE DADOS','reg':'REGISTRO','report':'REPORTAR INCONSISTÊNCIAS','settings':'CONFIGURAÇÕES',
+ 'sidebar_width':250,'report_top':0,'logo_w':190,'logo_h':70,'logo_align':'center','logo_top':-10,'sub_top':0,'menu_top':0,'sidebar_align':'left','sidebar_font':12,'item_h':42,'gap':8,'dash_top':0,'inv_top':0,'db_top':0,'reg_top':0,'settings_top':0,'show_footer':True,
  'blind_default':False,'dashboard_title':'Dashboard','inventory_title':'Inventário Rotativo','database_title':'Banco de Dados','register_title':'Registro','dashboard_subtitle':'Visão geral dos indicadores do estoque.','inventory_subtitle':'Controle e execução dos inventários rotativos.','database_subtitle':'Importação, tratamento e classificação da base de estoque.','register_subtitle':'Histórico dos inventários e das contagens realizadas.'
 }
 
@@ -37,6 +37,7 @@ if 'section' not in st.session_state: st.session_state.section='Dashboard'
 if 'selected' not in st.session_state: st.session_state.selected=None
 if 'new_inv' not in st.session_state: st.session_state.new_inv=False
 if 'profile' not in st.session_state: st.session_state.profile='Operador'
+if 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}
 cfg=st.session_state.cfg
 config=cfg
 
@@ -49,6 +50,7 @@ _cfg_defaults = {
     'database_label':'BANCO DE DADOS',
     'register_label':'REGISTRO',
     'settings_label':'CONFIGURAÇÕES',
+    'report_label':'REPORTAR INCONSISTÊNCIAS',
     'new_inventory_text':'NOVO INVENTÁRIO',
     'address_title':'ENDEREÇOS ELEGÍVEIS',
     'sidebar_width':250,
@@ -61,6 +63,31 @@ for _k, _v in _cfg_defaults.items():
 def persist_cfg(): save('cfg',cfg)
 def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
 def persist_db(): save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
+def persist_reports(): save('reports',st.session_state.reports)
+
+def excel_bytes(df, sheet_name):
+ out=io.BytesIO()
+ with pd.ExcelWriter(out,engine='openpyxl') as writer:
+  df.to_excel(writer,index=False,sheet_name=sheet_name)
+  ws=writer.book[sheet_name]
+  ws.freeze_panes='A2'
+  ws.auto_filter.ref=ws.dimensions
+  from openpyxl.styles import Font, PatternFill, Alignment
+  for cell in ws[1]:
+   cell.font=Font(bold=True,color='11130F')
+   cell.fill=PatternFill('solid',fgColor='FFD63B')
+   cell.alignment=Alignment(horizontal='center',vertical='center')
+  ws.row_dimensions[1].height=24
+  for col in ws.columns:
+   letter=col[0].column_letter
+   max_len=max(len(str(c.value)) if c.value is not None else 0 for c in col[:80])
+   ws.column_dimensions[letter].width=min(max(max_len+2,10),60)
+ return out.getvalue()
+
+def signed_brl(v):
+ x=float(v)
+ if abs(x)<1e-12:return 'R$ 0,00'
+ return ('+' if x>0 else '-')+brl(abs(x))
 
 def logo_uri():
  b,n=st.session_state.logo
@@ -115,7 +142,7 @@ def nextdoc():
  return f'{today}-{q:03d}'
 def cycle():
  codes=st.session_state.db.loc[st.session_state.db.saldo_apto>0,'codigo'].astype(str);return min([int(st.session_state.cycles.get(c,0)) for c in codes],default=0)+1
-def select_products(db,n):
+def select_products(db,n,urgent_codes=None):
  w=db[(db.saldo_apto>0)&(db.valor_unitario>0)].copy();w['cc']=w.codigo.astype(str).map(lambda c:int(st.session_state.cycles.get(c,0)));m=w.cc.min();w=w[w.cc==m];u=w.sort_values(['classificacao_r_un','codigo'],na_position='last');t=w.sort_values(['classificacao_r_total','codigo'],na_position='last');nu=n//2;sel=[]
  for c in u.codigo:
   if len(sel)>=nu:break
@@ -123,11 +150,18 @@ def select_products(db,n):
  for c in t.codigo:
   if len(sel)>=n:break
   if c not in sel:sel.append(c)
- if len(sel)<n:
+ urgent_codes=[str(c) for c in (urgent_codes or [])]
+ code_set=set(db.codigo.astype(str))
+ urgent_available=[c for c in urgent_codes if c in code_set and c not in sel]
+ for c in urgent_available:
+  sel.append(c)
+ target=n+len(urgent_available)
+ if len(sel)<target:
   for c in pd.concat([u,t]).drop_duplicates('codigo').codigo:
+   c=str(c)
    if c not in sel:sel.append(c)
-   if len(sel)>=n:break
- return db[db.codigo.isin(sel)].copy()
+   if len(sel)>=target:break
+ return db[db.codigo.astype(str).isin(sel)].copy()
 def make_rows(sel,pos):
  rows=[]
  for _,p in sel.iterrows():
@@ -138,7 +172,8 @@ def persist_inv(inv):st.session_state.inventories[inv['documento']]=inv;save('in
 def addcount(r,q,cm,stage):r['contagens'].append({'etapa':stage,'quantidade':float(q),'comentario':cm.strip() if cm.strip() else 'SC','data':datetime.now().strftime('%d/%m/%Y %H:%M:%S')})
 def last(r):return r['contagens'][-1]['quantidade'] if r['contagens'] else None
 def diff(r,q):return float(q)-float(r['qtd_sistema'])
-def furo(r,q):return abs(diff(r,q))*abs(float(r['valor_unitario']))
+def divergencia_valor(r,q):return diff(r,q)*float(r['valor_unitario'])
+def divergência(r,q):return abs(divergencia_valor(r,q))
 def sev(v):return 'BAIXO' if v<=100 else 'MÉDIO' if v<=1000 else 'ALTO'
 def mark_cycle(inv):
  if inv.get('ciclo_marcado'):return
@@ -149,7 +184,13 @@ def close_inv(inv):
   if r['contagem_final'] is None:r['contagem_final']=last(r)
   if not r['resultado_final']:r['resultado_final']='ENCERRADO PELO GESTOR'
   r['status']='FINALIZADO'
- inv['status']='FECHADO';mark_cycle(inv);persist_inv(inv)
+ inv['status']='FECHADO';mark_cycle(inv)
+ for rep in st.session_state.reports.values():
+  if rep.get('status')=='ABERTO' and any(str(r['codigo'])==str(rep.get('codigo')) and str(r['endereco'])==str(rep.get('endereco')) for r in inv['rows']):
+   rep['status']='ENCERRADO'
+   rep['inventario_doc']=inv['documento']
+   rep['encerrado_em']=datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+ persist_reports();persist_inv(inv)
 
 # Sidebar
 with st.sidebar:
@@ -157,8 +198,9 @@ with st.sidebar:
  if u:st.markdown(f'<div class="logo-area"><img src="{u}"></div>',unsafe_allow_html=True)
  else:st.markdown('<div class="logo-area"><div style="color:var(--muted);text-align:center;font-size:11px">LOGO DA EMPRESA<br>Configure em Configurações.</div></div>',unsafe_allow_html=True)
  st.markdown(f'<div class="sidebar-sub">{config["sidebar_subtitle"]}</div>',unsafe_allow_html=True);st.markdown(f'<div class="menu-label">{config["menu_label"]}</div>',unsafe_allow_html=True)
- nav=[('Dashboard',f'▦  {config["dashboard_label"]}'),('Inventário Rotativo',f'✎  {config["inventory_label"]}'),('Banco de Dados',f'▣  {config["database_label"]}'),('Registro',f'◷  {config["register_label"]}'),('Configurações',f'⚙  {config["settings_label"]}')]
- tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top']}
+ nav=[('Dashboard',f'▦  {config["dashboard_label"]}'),('Inventário Rotativo',f'✎  {config["inventory_label"]}'),('Banco de Dados',f'▣  {config["database_label"]}'),('Registro',f'◷  {config["register_label"]}'),('Reportar Inconsistências',f'⚠  {config["report_label"]}'),('Configurações',f'⚙  {config["settings_label"]}')]
+
+ tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Reportar Inconsistências':cfg.get('report_top',0),'Configurações':cfg['settings_top']}
  for k,l in nav:
   off=tops.get(k,0)
   st.markdown(f'<div style="height:0;margin-top:{off}px"></div>',unsafe_allow_html=True)
@@ -172,8 +214,25 @@ if active=='Dashboard':
  st.subheader(config['dashboard_title']);st.caption('Visão geral dos indicadores do estoque.')
  if st.session_state.db is None:st.info('Importe e processe os relatórios na aba Banco de Dados.')
  else:
-  db=st.session_state.db;items=int((db.saldo_apto>0).sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
-  a,b,c,d=st.columns(4);a.metric('ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'));b.metric('POSIÇÕES CONTABILIZADAS',f'{len(cnt):,}'.replace(',','.'));c.metric('POSIÇÕES DIVERGENTES',f'{len(div):,}'.replace(',','.'));d.metric('DIVERGENTES / CONTADOS',f'{len(div)/len(cnt)*100:.2f}%' if cnt else '—');a,b=st.columns(2);a.metric('DIVERGENTES / ITENS COM SALDO',f'{len(div)/items*100:.2f}%' if items else '—');b.metric('VALOR TOTAL DO ESTOQUE ANALÍTICO',brl(db.valor_total.sum()))
+  db=st.session_state.db;items=int((db.saldo_apto>0).sum());valor_apto=float(db.valor_total.sum());rr=[r for x in st.session_state.inventories.values() for r in x['rows']];cnt=[r for r in rr if r['contagens']];div=[r for r in cnt if abs(diff(r,last(r)))>1e-9]
+  qtd_cnt=len(cnt);qtd_div=len(div);acc_itens=(100-(qtd_div/items*100)) if items else 100.0;acc_pos=(100-(qtd_div/qtd_cnt*100)) if qtd_cnt else 100.0
+  a,b,c,d=st.columns(4);a.metric('ITENS DIFERENTES COM SALDO',f'{items:,}'.replace(',','.'));b.metric('VALOR TOTAL APTO A CONTABILIZAR',brl(valor_apto));c.metric('POSIÇÕES CONTABILIZADAS',f'{qtd_cnt:,}'.replace(',','.'));d.metric('POSIÇÕES DIVERGENTES',f'{qtd_div:,}'.replace(',','.'))
+  a,b=st.columns(2);a.metric('ACURÁCIA · DIVERGENTES / ITENS COM SALDO',f'{acc_itens:.2f}%');b.metric('ACURÁCIA · DIVERGENTES / CONTABILIZADOS',f'{acc_pos:.2f}%')
+  st.markdown('#### Indicadores visuais')
+  ch1,ch2=st.columns(2)
+  with ch1:
+   status_df=pd.DataFrame({'Quantidade':[max(qtd_cnt-qtd_div,0),qtd_div]},index=['Sem divergência','Com divergência'])
+   st.bar_chart(status_df,use_container_width=True,height=260)
+  with ch2:
+   inv_rows=[]
+   for x in sorted(st.session_state.inventories.values(),key=lambda z:z.get('criado_em','')):
+    total=sum(1 for r in x['rows'] if r['contagens']); dv=sum(1 for r in x['rows'] if r['contagens'] and abs(diff(r,last(r)))>1e-9)
+    if total:inv_rows.append({'Inventário':x['documento'],'Contabilizadas':total,'Divergentes':dv})
+   if inv_rows:
+    chart=pd.DataFrame(inv_rows).set_index('Inventário')
+    st.bar_chart(chart,use_container_width=True,height=260)
+   else:
+    st.info('Ainda não existem contagens para gerar o gráfico por inventário.')
 
 # Inventory
 elif active=='Inventário Rotativo':
@@ -186,15 +245,27 @@ elif active=='Inventário Rotativo':
    with st.container(border=True):
     a,b,c=st.columns(3);n=a.number_input('Quantidade de produtos distintos',1,500,10);blind=b.checkbox('Contagem cega',value=cfg['blind_default']);c.metric('Ciclo atual',cycle());x,y=st.columns(2)
     if x.button('Criar inventário',type='primary',use_container_width=True):
-     sel=select_products(st.session_state.db,n);rows=make_rows(sel,st.session_state.pos)
+     urgent_codes=sorted({str(rep.get('codigo')) for rep in st.session_state.reports.values() if rep.get('status')=='ABERTO' and rep.get('equipe')=='INVENTÁRIO ROTATIVO'})
+     sel=select_products(st.session_state.db,n,urgent_codes);rows=make_rows(sel,st.session_state.pos)
      if not rows:st.error('Os produtos selecionados não possuem endereços aptos.')
      else:
       doc=nextdoc();st.session_state.inventories[doc]={'documento':doc,'data':datetime.now().strftime('%d/%m/%Y %H:%M'),'responsavel':st.session_state.profile,'blind_count':blind,'ciclo':cycle(),'status':'EM CONTAGEM','rows':rows,'criado_em':datetime.now().isoformat(timespec='seconds'),'ciclo_marcado':False};persist_inv(st.session_state.inventories[doc]);st.session_state.selected=doc;st.session_state.new_inv=False;st.rerun()
     if y.button('Cancelar'):st.session_state.new_inv=False;st.rerun()
-  for inv in sorted(st.session_state.inventories.values(),key=lambda x:x.get('criado_em',''),reverse=True):
-   with st.container(border=True):
-    s=len(inv['rows']);prod=len({r['codigo'] for r in inv['rows']});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
-    if st.button('Abrir',key='op_'+inv['documento']):st.session_state.selected=inv['documento'];st.rerun()
+  def render_inventory_cards(items):
+   for inv in items:
+    with st.container(border=True):
+     s=len(inv['rows']);prod=len({r['codigo'] for r in inv['rows']});a,b,c,d=st.columns([2.2,1.5,1,1]);a.markdown(f'**{inv["documento"]}**');a.caption(f'Ciclo {inv["ciclo"]} · {inv["data"]}');b.write(f'**{inv["status"]}**');c.metric('Produtos',prod);d.metric('Posições',s)
+     if st.button('Abrir',key='op_'+inv['documento']):st.session_state.selected=inv['documento'];st.rerun()
+  all_inv=sorted(st.session_state.inventories.values(),key=lambda x:x.get('criado_em',''),reverse=True)
+  open_inv=[x for x in all_inv if x.get('status')!='FECHADO']
+  closed_inv=[x for x in all_inv if x.get('status')=='FECHADO']
+  tab_open,tab_closed=st.tabs([f'EM ABERTO ({len(open_inv)})',f'FECHADOS ({len(closed_inv)})'])
+  with tab_open:
+   if open_inv:render_inventory_cards(open_inv)
+   else:st.info('Nenhum inventário em aberto.')
+  with tab_closed:
+   if closed_inv:render_inventory_cards(closed_inv)
+   else:st.info('Nenhum inventário fechado.')
   doc=st.session_state.selected
   if doc in st.session_state.inventories:
    inv=st.session_state.inventories[doc];st.divider();st.markdown(f'### Inventário {doc} — {inv["status"]}')
@@ -221,7 +292,7 @@ elif active=='Inventário Rotativo':
     if not divs: st.success('Não existem divergências na 1ª contagem. Todos os itens foram confirmados pelo sistema.')
     for r in divs:
      with st.container(border=True):
-      q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Furo',brl(furo(r,q)));st.caption(f'Classificação: {sev(furo(r,q))} · Comentário: {r["contagens"][-1]["comentario"]}')
+      q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Divergência',signed_brl(divergencia_valor(r,q)));st.caption(f'Divergência de quantidade: {diff(r,q):+,.3f}'.replace(',','X').replace('.',',').replace('X','.').replace('+','+')+f' · Classificação: {sev(abs(divergencia_valor(r,q)))} · Comentário: {r["contagens"][-1]["comentario"]}')
       x,y,z=st.columns(3)
       if x.button('RECONTAR ESTE ITEM',key='r1_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
       if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
@@ -316,7 +387,7 @@ elif active=='Banco de Dados':
     d,pos=build_db(st.session_state.an_df,st.session_state.en_df,st.session_state.eligible);st.session_state.db=d;st.session_state.pos=pos;st.session_state.cycles={};persist_db();save('cycles',{});st.success('Banco processado e salvo.')
    except Exception as e:st.error(f'Erro: {e}')
  if st.session_state.db is not None:
-  st.divider();st.subheader('Banco consolidado');v=st.session_state.db.copy();v['valor_unitario']=v.valor_unitario.map(brl);v['saldo_apto']=v.saldo_apto.map(fn);v['valor_k']=v.valor_k.map(brl);v['valor_total']=v.valor_total.map(brl);v.columns=['Código','Descrição','Qtd. Analítico','Valor Total K','Valor Unitário','Saldo Apto','Valor Total Apto','Classificação R$ UN.','Classificação R$ TOTAL'];st.dataframe(v,use_container_width=True,hide_index=True,height=500);st.download_button('Exportar banco CSV',st.session_state.db.to_csv(index=False).encode('utf-8-sig'),'banco_consolidado.csv','text/csv');st.caption('Valor Unitário = K ÷ H. Valor Total do saldo apto = Saldo Apto × Valor Unitário. A Classificação R$ TOTAL usa o valor K do Estoque Analítico.')
+  st.divider();st.subheader('Banco consolidado');v=st.session_state.db.copy();v['valor_unitario']=v.valor_unitario.map(brl);v['saldo_apto']=v.saldo_apto.map(fn);v['valor_k']=v.valor_k.map(brl);v['valor_total']=v.valor_total.map(brl);v.columns=['Código','Descrição','Qtd. Analítico','Valor Total K','Valor Unitário','Saldo Apto','Valor Total Apto','Classificação R$ UN.','Classificação R$ TOTAL'];st.dataframe(v,use_container_width=True,hide_index=True,height=500);st.download_button('Exportar banco em Excel',excel_bytes(v,'Banco Consolidado'),'banco_consolidado.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');st.caption('Valor Unitário = K ÷ H. Valor Total do saldo apto = Saldo Apto × Valor Unitário. A Classificação R$ TOTAL usa o valor K do Estoque Analítico.')
 
 # Register
 elif active=='Registro':
@@ -324,10 +395,66 @@ elif active=='Registro':
  for inv in st.session_state.inventories.values():
   if inv['status']!='FECHADO':continue
   for r in inv['rows']:
-   rows.append({'Documento':inv['documento'],'Data':inv['data'],'Responsável':inv['responsavel'],'Ciclo':inv['ciclo'],'Código':r['codigo'],'Descrição':r['descricao'],'Endereço':r['endereco'],'Qtd. Sistema':r['qtd_sistema'],'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),'Contagem Final':r['contagem_final'],'Resultado':r['resultado_final'],'Valor Furo':furo(r,r['contagem_final']) if r['contagem_final'] is not None else 0})
+   rows.append({'Documento':inv['documento'],'Data':inv['data'],'Responsável':inv['responsavel'],'Ciclo':inv['ciclo'],'Código':r['codigo'],'Descrição':r['descricao'],'Endereço':r['endereco'],'Qtd. Sistema':r['qtd_sistema'],'Contagens':' | '.join(f"{x['etapa']}: {fn(x['quantidade'])} ({x['comentario']})" for x in r['contagens']),'Contagem Final':r['contagem_final'],'Resultado':r['resultado_final'],'Valor Divergência':divergencia_valor(r,r['contagem_final']) if r['contagem_final'] is not None else 0})
  if rows:
-  df=pd.DataFrame(rows);st.dataframe(df,use_container_width=True,hide_index=True);st.download_button('Exportar Registro CSV',df.to_csv(index=False).encode('utf-8-sig'),'registro_inventarios.csv','text/csv')
+  df=pd.DataFrame(rows);st.dataframe(df,use_container_width=True,hide_index=True);export_df=df.copy();export_df['Valor Divergência']=export_df['Valor Divergência'].map(signed_brl);st.download_button('Exportar Registro em Excel',excel_bytes(export_df,'Registro'),'registro_inventarios.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
  else:st.info('Nenhum inventário fechado.')
+
+# Reportar Inconsistências
+elif active=='Reportar Inconsistências':
+ st.subheader('Reportar Inconsistências');st.caption('Abertura e acompanhamento de inconsistências operacionais. O reporte de estoque será direcionado ao Inventário Rotativo.')
+ if st.session_state.db is None:
+  st.warning('Primeiro importe e processe a base na aba Banco de Dados.')
+ else:
+  if st.button('INICIAR INCONSISTÊNCIA',type='primary',use_container_width=True):st.session_state.new_report=True;st.rerun()
+  if 'new_report' not in st.session_state:st.session_state.new_report=False
+  if st.session_state.new_report:
+   with st.container(border=True):
+    st.markdown('#### Novo chamado de inconsistência')
+    st.info('O material reportado será incluído automaticamente no próximo Inventário Rotativo.')
+    codes=sorted(st.session_state.db.loc[st.session_state.db.saldo_apto>0,'codigo'].astype(str).unique())
+    addresses=sorted([str(x) for x in st.session_state.eligible if str(x).strip()])
+    a,b=st.columns(2)
+    equipe=a.selectbox('Equipe responsável',['INVENTÁRIO ROTATIVO'])
+    codigo=b.selectbox('Código do material',options=['']+codes,index=0,help='Digite para pesquisar; a lista sugere correspondências.')
+    descricao=''
+    if codigo:
+     m=st.session_state.db[st.session_state.db.codigo.astype(str)==str(codigo)]
+     if not m.empty:descricao=str(m.iloc[0]['descricao'])
+    st.caption(f'Descrição: {descricao}' if descricao else 'Selecione o código do material.')
+    endereco=st.selectbox('Endereço',options=['']+addresses,index=0,help='Digite para pesquisar entre os endereços habilitados no Banco de Dados.')
+    obs=st.text_area('OBSERVAÇÃO OBRIGATÓRIA',placeholder='INFORME O QUE ACONTECEU...',height=130)
+    st.caption('A observação será registrada automaticamente em CAIXA ALTA.')
+    x,y=st.columns(2)
+    if x.button('SALVAR INCONSISTÊNCIA',type='primary',use_container_width=True):
+     obs=obs.strip().upper()
+     if not codigo or not endereco or not obs:
+      st.error('Código, endereço e observação são obrigatórios.')
+     else:
+      rid=datetime.now().strftime('%Y%m%d%H%M%S')+'-'+uuid.uuid4().hex[:6].upper()
+      st.session_state.reports[rid]={'id':rid,'criado_em':datetime.now().strftime('%d/%m/%Y %H:%M:%S'),'equipe':equipe,'codigo':str(codigo),'descricao':descricao,'endereco':str(endereco),'observacao':obs,'status':'ABERTO','inventario_doc':None,'encerrado_em':None}
+      persist_reports();st.session_state.new_report=False;st.success(f'Inconsistência {rid} registrada.');st.rerun()
+    if y.button('CANCELAR',use_container_width=True):st.session_state.new_report=False;st.rerun()
+  reports=sorted(st.session_state.reports.values(),key=lambda x:x.get('criado_em',''),reverse=True)
+  abertos=[r for r in reports if r.get('status')=='ABERTO'];encerrados=[r for r in reports if r.get('status')=='ENCERRADO']
+  st.divider();st.markdown('### Chamados')
+  ta,te=st.tabs([f'NÃO TRATADOS ({len(abertos)})',f'ENCERRADOS ({len(encerrados)})'])
+  with ta:
+   if not abertos:st.success('Nenhuma inconsistência pendente.')
+   for r in abertos:
+    with st.container(border=True):
+     a,b,c=st.columns([1.2,2.2,1.5]);a.markdown(f'**{r["id"]}**');b.markdown(f'**{r["codigo"]}** · {r["descricao"]}');c.markdown(f'**{r["endereco"]}**')
+     st.caption(f'Criado em {r["criado_em"]} · Equipe: {r["equipe"]}')
+     st.write(f'**OBSERVAÇÃO:** {r["observacao"]}')
+     st.warning('PENDENTE — será incluído no próximo Inventário Rotativo.')
+  with te:
+   if not encerrados:st.info('Nenhuma inconsistência encerrada.')
+   for r in encerrados:
+    with st.container(border=True):
+     a,b,c=st.columns([1.2,2.2,1.5]);a.markdown(f'**{r["id"]}**');b.markdown(f'**{r["codigo"]}** · {r["descricao"]}');c.markdown(f'**{r["endereco"]}**')
+     st.caption(f'Criado em {r["criado_em"]} · Encerrado em {r.get("encerrado_em") or "—"} · Equipe: {r["equipe"]}')
+     st.write(f'**OBSERVAÇÃO:** {r["observacao"]}')
+     st.success(f'TRATADO NO INVENTÁRIO: {r.get("inventario_doc") or "—"}')
 
 # Settings
 elif active=='Configurações':
@@ -354,7 +481,7 @@ elif active=='Configurações':
   cfg['sidebar_sub']=st.text_input('Texto abaixo da logo',cfg['sidebar_sub']);cfg['sub_top']=st.slider('Posição do subtítulo',-60,100,cfg['sub_top']);cfg['menu']=st.text_input('Título do menu',cfg['menu']);cfg['menu_top']=st.slider('Posição do título MENU',-60,100,cfg['menu_top']);cfg['gap']=st.slider('Espaço antes do MENU',0,60,cfg['gap']);cfg['sidebar_align']=st.selectbox('Alinhamento dos tópicos',['left','center','right'],index=['left','center','right'].index(cfg['sidebar_align']));cfg['sidebar_font']=st.slider('Tamanho dos tópicos',10,22,cfg['sidebar_font']);cfg['item_h']=st.slider('Altura dos tópicos',30,70,cfg['item_h']);cfg['icon_color']=st.color_picker('Cor dos ícones',cfg['icon_color'])
   a,b=st.columns(2);cfg['dash_top']=a.slider('Dashboard — posição',-30,50,cfg['dash_top']);cfg['inv_top']=b.slider('Inventário — posição',-30,50,cfg['inv_top']);a,b=st.columns(2);cfg['db_top']=a.slider('Banco — posição',-30,50,cfg['db_top']);cfg['reg_top']=b.slider('Registro — posição',-30,50,cfg['reg_top']);cfg['settings_top']=st.slider('Configurações — posição',-30,50,cfg['settings_top'])
   st.caption('Cada tópico pode ter sua própria posição vertical.')
-  for k,l in [('dash','Dashboard'),('inv','Inventário Rotativo'),('db','Banco de Dados'),('reg','Registro'),('settings','Configurações')]:cfg[k]=st.text_input(l,cfg[k],key='menu_'+k)
+  for k,l in [('dash','Dashboard'),('inv','Inventário Rotativo'),('db','Banco de Dados'),('reg','Registro'),('report','Reportar Inconsistências'),('settings','Configurações')]:cfg[k]=st.text_input(l,cfg[k],key='menu_'+k)
  with st.expander('06 · TEXTOS DAS PÁGINAS',False):
   for k,l in [('title','Título principal'),('subtitle','Subtítulo principal'),('dashboard_title','Título Dashboard'),('inventory_title','Título Inventário'),('database_title','Título Banco'),('register_title','Título Registro')]:cfg[k]=st.text_input(l,cfg.get(k,DEFAULT.get(k,'')),key='pg_'+k)
  with st.expander('07 · INVENTÁRIO',True):cfg['blind_default']=st.checkbox('Contagem cega por padrão',cfg['blind_default'])
