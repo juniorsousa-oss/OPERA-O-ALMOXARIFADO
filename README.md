@@ -1,25 +1,37 @@
+# Sistema Operacional — Inventário Rotativo
 
-# Aplicativo Operacional — Inventário Rotativo
+Versão com identidade visual configurável e base do módulo de Inventário Rotativo.
 
-## Objetivo desta versão
+## Novidades desta versão
 
-Construir a base do módulo de Inventário Rotativo, começando pelo Banco de Dados.
+- Tema **Dark** e **Clean** com contraste automático.
+- Aba **Configurações**.
+- Upload de logo da empresa; a escrita fixa da lateral foi removida.
+- Configuração de tipo de letra e tamanhos.
+- Configuração de cores de fundo, painéis, bordas e textos para cada tema.
+- Configuração dos nomes do menu e dos principais textos das páginas.
+- Configuração dos textos dos botões.
+- Configuração da largura do menu lateral.
+- Restauração da configuração padrão.
 
-### Relatório CADASTROS
+> Nesta versão, as configurações ficam na sessão atual do aplicativo. Para persistência definitiva, a próxima etapa pode gravá-las em PostgreSQL/Supabase.
+
+## Banco de Dados
+
+### CADASTROS
 - B: Código do produto
 - C: Descrição
 - H: Último Preço
 
-### Relatório ENDEREÇO
+### ENDEREÇO
 - A: Código do produto
 - D: Endereço
 - H: Quantidade
-- Lote: ignorado nesta primeira versão
+- Lote ignorado nesta primeira versão
 
-## Regras já implementadas
-
+### Regras
 1. Código do produto é a chave de relacionamento.
-2. Produto + endereço é consolidado em uma única posição.
+2. Produto + endereço são consolidados em uma posição.
 3. Lotes diferentes no mesmo endereço são somados.
 4. Endereços são parametrizáveis como aptos/não aptos.
 5. Saldo apto considera somente endereços selecionados.
@@ -27,15 +39,3 @@ Construir a base do módulo de Inventário Rotativo, começando pelo Banco de Da
 7. Classificação R$ UN. = ranking decrescente pelo último preço.
 8. Classificação R$ TOTAL = ranking decrescente pelo valor total.
 9. Banco de produtos apresenta uma linha por produto.
-10. A estrutura de inventário, contagem, análise, recontagem e auditoria será conectada nas próximas etapas.
-
-## Rodar localmente
-
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-## Publicação futura
-
-O projeto está organizado para posteriormente ser colocado no GitHub e publicado no Streamlit Cloud. O banco persistente poderá ser migrado para PostgreSQL/Supabase quando o fluxo operacional estiver validado.
