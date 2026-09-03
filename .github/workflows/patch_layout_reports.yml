@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/patch_layout_reports.py'
+      - '.github/workflows/patch_layout_reports.yml'
   workflow_dispatch:
 
 permissions:
