@@ -208,9 +208,17 @@ elif active=='Inventário Rotativo':
     if all(r['contagens'] for r in inv['rows']):
      if st.button('Fechar Contagem',type='primary'):inv['status']='AGUARDANDO ANÁLISE';persist_inv(inv);st.rerun()
    elif prof=='Gestor' and inv['status']=='AGUARDANDO ANÁLISE':
-    st.markdown('#### Análise do gestor')
-    divs=[r for r in inv['rows'] if r['contagens'] and abs(diff(r,last(r)))>1e-9]
-    if not divs:st.success('Não existem divergências.');
+    st.markdown('#### Análise da 1ª contagem')
+    # 1ª contagem: igual ao sistema confirma; divergente segue para decisão.
+    for r in inv['rows']:
+     if not r['contagens'] or r['status']=='FINALIZADO':
+      continue
+     q=last(r)
+     if abs(diff(r,q))<1e-9:
+      r['contagem_final']=q;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO'
+    persist_inv(inv)
+    divs=[r for r in inv['rows'] if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
+    if not divs: st.success('Não existem divergências na 1ª contagem. Todos os itens foram confirmados pelo sistema.')
     for r in divs:
      with st.container(border=True):
       q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Furo',brl(furo(r,q)));st.caption(f'Classificação: {sev(furo(r,q))} · Comentário: {r["contagens"][-1]["comentario"]}')
@@ -219,13 +227,13 @@ elif active=='Inventário Rotativo':
       if y.button('AUDITAR ESTE ITEM',key='a1_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
       if z.button('ENCERRAR ESTE ITEM',key='e1_'+r['id']):r['contagem_final']=q;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
     x,y,z=st.columns(3)
-    if x.button('RECONTAR TODOS',type='primary',use_container_width=True):
+    if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in inv['rows']:
-      if r['contagens'] and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
+      if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
      inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
-    if y.button('AUDITAR TODOS',use_container_width=True):
+    if y.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
      for r in inv['rows']:
-      if r['contagens'] and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
+      if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
     if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
    elif prof=='Operador' and inv['status']=='AGUARDANDO RECONTAGEM':
@@ -238,37 +246,38 @@ elif active=='Inventário Rotativo':
     if not any(r['status']=='RECONTAR' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
    elif prof=='Gestor' and inv['status']=='AGUARDANDO DECISÃO':
     st.markdown('#### Avaliação após cada recontagem')
-    for r in inv['rows']:
-     if r['status'] not in ('RECONTADA','AUDITADA','PENDENTE'):continue
+    # Mesma regra para 2ª, 3ª e todas as contagens seguintes.
+    candidates=[r for r in inv['rows'] if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
+    if not candidates: st.success('Não existem itens pendentes de decisão.')
+    for r in candidates:
      q2=last(r);q1=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
-     if q2 is None:
-      continue
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Anterior: **{fn(q1) if q1 is not None else "—"}** · Atual: **{fn(q2)}**')
       if q1 is not None and abs(q2-q1)<1e-9:
-       st.success('Atual igual à anterior: ERRO DE INVENTÁRIO. Terceira contagem não é necessária.');r['contagem_final']=q2;r['resultado_final']='ERRO DE INVENTÁRIO';r['status']='FINALIZADO';persist_inv(inv)
+       st.success('Atual igual à anterior: ERRO DE INVENTÁRIO. Nenhuma nova contagem é necessária.');r['contagem_final']=q2;r['resultado_final']='ERRO DE INVENTÁRIO';r['status']='FINALIZADO';persist_inv(inv)
       elif abs(q2-r['qtd_sistema'])<1e-9:
-       st.success('Atual igual ao sistema: SISTEMA CONFIRMADO. Terceira contagem não é necessária.');r['contagem_final']=q2;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO';persist_inv(inv)
+       st.success('Atual igual ao sistema: SISTEMA CONFIRMADO. Nenhuma nova contagem é necessária.');r['contagem_final']=q2;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO';persist_inv(inv)
       else:
-       st.warning('A divergência permanece.');a,b,c=st.columns(3)
-       if a.button('AUDITAR ESTE ITEM',key='da_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-       if b.button('RECONTAR NOVAMENTE',key='dr_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+       st.warning('A divergência permanece. O gestor deve decidir o próximo passo.');a,b,c=st.columns(3)
+       if a.button('RECONTAR ESTE ITEM',key='dr_'+r['id']):r['status']='RECONTAR';inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
+       if b.button('AUDITAR ESTE ITEM',key='da_'+r['id']):r['status']='AUDITORIA';inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
        if c.button('ENCERRAR ESTE ITEM',key='dc_'+r['id']):r['contagem_final']=q2;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
-    if st.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
+    x,y,z=st.columns(3)
+    if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in inv['rows']:
-      if r['status']=='RECONTADA' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
-     inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
-    if st.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
-     for r in inv['rows']:
-      if r['status']=='RECONTADA' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
+      if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='RECONTAR'
      inv['status']='AGUARDANDO RECONTAGEM';persist_inv(inv);st.rerun()
-    if all(r['status']=='FINALIZADO' for r in inv['rows']) and st.button('ENCERRAR INVENTÁRIO',type='primary'):close_inv(inv);st.rerun()
+    if y.button('AUDITAR TODOS OS DIVERGENTES',use_container_width=True):
+     for r in inv['rows']:
+      if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
+     inv['status']='AGUARDANDO AUDITORIA';persist_inv(inv);st.rerun()
+    if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
    elif prof=='Gestor' and inv['status']=='AGUARDANDO AUDITORIA':
     st.markdown('#### Auditoria / 3ª ou próxima contagem')
-    for r in inv['rows']:
-     if r['status']!='AUDITORIA':continue
+    targets=[r for r in inv['rows'] if r['status']=='AUDITORIA']
+    for r in targets:
      with st.container(border=True):
-      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}**');q=st.number_input('Contagem de auditoria',0.0,step=.001,format='%.3f',key='q3_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm3_'+r['id'])
+      st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Contagem de auditoria',0.0,step=.001,format='%.3f',key='q3_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cm3_'+r['id'])
       if st.button('Salvar auditoria',key='sv3_'+r['id'],type='primary'):addcount(r,q,cm,'AUDITORIA');r['status']='AUDITADA';persist_inv(inv);st.rerun()
     if not any(r['status']=='AUDITORIA' for r in inv['rows']):inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
    elif prof=='Gestor' and inv['status']=='FECHADO':
