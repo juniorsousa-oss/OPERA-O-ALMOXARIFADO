@@ -61,23 +61,35 @@ for _k, _v in _cfg_defaults.items():
     config.setdefault(_k, _v)
     cfg.setdefault(_k, _v)
 
-# Authentication: Supabase Auth (email + password). Session remains server-side in Streamlit.
-SUPABASE_URL = 'https://cuixazpxkvniqldmmnth.supabase.co'
-SUPABASE_KEY = st.secrets.get('SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_ZTqIgmA9Ez6AVQsoXa0P8Q_6CYHDFye')
+# Authentication: Firebase Authentication (email + password). Session remains server-side in Streamlit.
+FIREBASE_API_KEY = st.secrets.get('FIREBASE_API_KEY', 'AIzaSyDkS32UBjttYW1bWFho60EUnP4DXRYnKps')
+FIREBASE_AUTH_URL = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword'
 if 'auth_user' not in st.session_state: st.session_state.auth_user=None
 
 def auth_login(email, password):
-    if not SUPABASE_KEY:
+    if not FIREBASE_API_KEY:
         return None, 'A autenticação ainda não foi configurada no aplicativo.'
     try:
-        body=json.dumps({'email':email.strip().lower(),'password':password}).encode('utf-8')
-        req=Request(SUPABASE_URL+'/auth/v1/token?grant_type=password',data=body,headers={'apikey':SUPABASE_KEY,'Content-Type':'application/json'},method='POST')
+        body=json.dumps({'email':email.strip().lower(),'password':password,'returnSecureToken':True}).encode('utf-8')
+        req=Request(FIREBASE_AUTH_URL+'?key='+FIREBASE_API_KEY,data=body,headers={'Content-Type':'application/json'},method='POST')
         with urlopen(req,timeout=15) as resp: data=json.loads(resp.read().decode('utf-8'))
         return data, None
     except HTTPError as e:
-        try: msg=json.loads(e.read().decode('utf-8')).get('msg') or json.loads(e.read().decode('utf-8')).get('error_description')
-        except Exception: msg='Usuário ou senha inválidos.'
-        return None, msg or 'Usuário ou senha inválidos.'
+        try:
+            raw=e.read().decode('utf-8')
+            info=json.loads(raw)
+            code=(info.get('error') or {}).get('message','')
+            messages={
+                'INVALID_LOGIN_CREDENTIALS':'E-mail ou senha inválidos.',
+                'INVALID_PASSWORD':'E-mail ou senha inválidos.',
+                'EMAIL_NOT_FOUND':'E-mail ou senha inválidos.',
+                'USER_DISABLED':'Este usuário está desativado.',
+                'TOO_MANY_ATTEMPTS_TRY_LATER':'Muitas tentativas. Tente novamente mais tarde.'
+            }
+            msg=messages.get(code,'Não foi possível realizar o login.')
+        except Exception:
+            msg='Não foi possível realizar o login.'
+        return None, msg
     except (URLError, TimeoutError):
         return None, 'Não foi possível conectar ao serviço de autenticação.'
     except Exception:
