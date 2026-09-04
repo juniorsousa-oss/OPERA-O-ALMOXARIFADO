@@ -63,7 +63,7 @@ for _k, _v in _cfg_defaults.items():
 
 # Authentication: Supabase Auth (email + password). Session remains server-side in Streamlit.
 SUPABASE_URL = 'https://cuixazpxkvniqldmmnth.supabase.co'
-SUPABASE_KEY = st.secrets.get('SUPABASE_PUBLISHABLE_KEY', st.secrets.get('SUPABASE_ANON_KEY', ''))
+SUPABASE_KEY = st.secrets.get('SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_ZTqIgmA9Ez6AVQsoXa0P8Q_6CYHDFye')
 if 'auth_user' not in st.session_state: st.session_state.auth_user=None
 
 def auth_login(email, password):
