@@ -4,6 +4,8 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import pandas as pd
 import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 st.set_page_config(page_title='Gestão Almoxarifado | Inventário Rotativo', page_icon='📦', layout='wide', initial_sidebar_state='expanded')
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
@@ -40,6 +42,42 @@ if 'selected' not in st.session_state: st.session_state.selected=None
 if 'new_inv' not in st.session_state: st.session_state.new_inv=False
 if 'profile' not in st.session_state: st.session_state.profile='Operador'
 if 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}
+
+# Firebase Admin / Firestore: server-side access using Streamlit Secrets.
+def firebase_db():
+    try:
+        if not firebase_admin._apps:
+            sa = dict(st.secrets.get('firebase_admin', {}))
+            if not sa.get('project_id') or not sa.get('private_key') or not sa.get('client_email'):
+                return None
+            firebase_admin.initialize_app(credentials.Certificate(sa))
+        return firestore.client()
+    except Exception:
+        return None
+
+def load_user_profile():
+    user = st.session_state.get('auth_user') or {}
+    uid = user.get('localId','')
+    email = (user.get('email') or '').strip().lower()
+    if not uid: return 'Operador'
+    db = firebase_db()
+    if db is None: return 'Operador'
+    try:
+        ref=db.collection('usuarios').document(uid)
+        snap=ref.get()
+        if snap.exists:
+            data=snap.to_dict() or {}
+            if data.get('ativo') is False:
+                auth_logout()
+                return 'Operador'
+            perfil=str(data.get('perfil','OPERADOR')).upper()
+            return {'ADMIN':'Admin','GESTOR':'Gestor','OPERADOR':'Operador'}.get(perfil,'Operador')
+        ref.set({'email':email,'nome':email.split('@')[0] if email else 'Usuário','perfil':'OPERADOR','ativo':True,'criado_em':firestore.SERVER_TIMESTAMP})
+        return 'Operador'
+    except Exception:
+        return 'Operador'
+
+st.session_state.profile=load_user_profile()
 cfg=st.session_state.cfg
 config=cfg
 
