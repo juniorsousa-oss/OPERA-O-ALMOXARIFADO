@@ -60,13 +60,19 @@ def load_user_profile():
     uid = user.get('localId','')
     email = (user.get('email') or '').strip().lower()
     if not uid: return 'Operador'
+    # Bootstrap admin must be recognized even if Firestore is temporarily unavailable.
+    bootstrap = str(st.secrets.get('FIREBASE_BOOTSTRAP_ADMIN_EMAIL','')).strip().lower()
+    if bootstrap and email and email == bootstrap:
+        db = firebase_db()
+        if db is not None:
+            try:
+                db.collection('usuarios').document(uid).set({'email':email,'nome':email.split('@')[0],'perfil':'ADMIN','ativo':True,'atualizado_em':firestore.SERVER_TIMESTAMP}, merge=True)
+            except Exception:
+                pass
+        return 'Admin'
     db = firebase_db()
     if db is None: return 'Operador'
     try:
-        bootstrap = str(st.secrets.get('FIREBASE_BOOTSTRAP_ADMIN_EMAIL','')).strip().lower()
-        if bootstrap and email and email == bootstrap:
-            db.collection('usuarios').document(uid).set({'email':email,'nome':email.split('@')[0],'perfil':'ADMIN','ativo':True,'atualizado_em':firestore.SERVER_TIMESTAMP}, merge=True)
-            return 'Admin'
         ref=db.collection('usuarios').document(uid)
         snap=ref.get()
         if snap.exists:
