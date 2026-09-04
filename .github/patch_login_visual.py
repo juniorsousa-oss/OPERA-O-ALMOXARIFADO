@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 p = Path('app.py')
 s = p.read_text(encoding='utf-8')
@@ -7,9 +6,9 @@ s = p.read_text(encoding='utf-8')
 start = s.index('def render_login():')
 end = s.index("\nif not st.session_state.auth_user:", start)
 
-new_func = r'''def render_login():
+new_func = """def render_login():
     login_logo = logo_uri()
-    st.markdown(''' + "'''<style>" + r'''
+    st.markdown('''<style>
     [data-testid="stHeader"]{background:transparent!important}
     .login-wrap{min-height:0!important;display:flex;align-items:flex-start;justify-content:center;padding-top:12px;margin-bottom:0}
     .login-card{width:min(440px,92vw);padding:18px 24px 14px;background:#101614;border:1px solid #2B3732;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.28);text-align:center}
@@ -23,8 +22,7 @@ new_func = r'''def render_login():
     [class*="st-key-login_form"] [data-testid="stForm"]{border:1px solid #2B3732!important;border-radius:14px!important;padding:18px 20px 16px!important;background:transparent!important}
     [class*="st-key-login_form"] [data-testid="stFormSubmitButton"] button{margin-top:4px!important}
     .login-footer{width:min(440px,92vw);text-align:center;color:#A9B1AC;font-size:11px;margin:8px auto 0}
-    </style>''' + "</style>" + r''',unsafe_allow_html=True)
-
+    </style>''',unsafe_allow_html=True)
     logo_html = (f'<div class="login-logo"><img src="{login_logo}"></div>' if login_logo else '<div class="login-brand">Se<span>tt</span>a</div>')
     st.markdown(f'<div class="login-wrap"><div class="login-card">{logo_html}<div class="login-sub">SISTEMA OPERACIONAL DE ESTOQUE</div><div class="login-title">ACESSO AO SISTEMA</div></div></div>',unsafe_allow_html=True)
     with st.form('login_form'):
@@ -43,7 +41,7 @@ new_func = r'''def render_login():
                 st.session_state.auth_refresh_token=data.get('refresh_token','')
                 st.rerun()
     st.markdown('<div class="login-footer">Acesso autorizado somente para usuários cadastrados.</div>',unsafe_allow_html=True)
-'''
+"""
 
 s = s[:start] + new_func + s[end:]
 p.write_text(s, encoding='utf-8')
