@@ -98,7 +98,7 @@ def render_login():
         login_logo='data:'+mime+';base64,'+base64.b64encode(b).decode()
     st.markdown('''<style>
     [data-testid="stHeader"]{background:transparent!important}
-    .login-wrap{min-height:0!important;display:flex;align-items:flex-start;justify-content:center;padding-top:12px;margin-bottom:0}
+    .login-wrap{min-height:0!important;display:flex;align-items:flex-start;justify-content:center;padding-top:12px;margin-bottom:24px}
     .login-card{width:min(440px,92vw);padding:18px 24px 14px;background:#101614;border:1px solid #2B3732;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.28);text-align:center}
     .login-logo{display:flex;align-items:center;justify-content:center;height:66px;margin:0 auto 4px;overflow:hidden}
     .login-logo img{max-width:250px;max-height:62px;width:auto;height:auto;object-fit:contain;display:block}
@@ -106,7 +106,7 @@ def render_login():
     .login-brand span{color:#FFD63B}
     .login-sub{text-align:center;color:#A9B1AC;font-size:12px;margin-bottom:10px}
     .login-title{text-align:center;color:#F4F5F2;font-size:18px;font-weight:800;margin-bottom:0}
-    [class*="st-key-login_form"]{margin-top:10px!important}
+    [class*="st-key-login_form"]{margin-top:0!important}
     [class*="st-key-login_form"] [data-testid="stForm"]{border:1px solid #2B3732!important;border-radius:14px!important;padding:18px 20px 16px!important;background:transparent!important}
     [class*="st-key-login_form"] [data-testid="stFormSubmitButton"] button{margin-top:4px!important}
     .login-footer{width:min(440px,92vw);text-align:center;color:#A9B1AC;font-size:11px;margin:8px auto 0}
