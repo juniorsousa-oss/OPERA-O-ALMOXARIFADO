@@ -1,4 +1,4 @@
-import os, io, json, base64, pickle, sqlite3, uuid
+import os, io, json, base64, pickle, sqlite3, uuid, hashlib
 from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -32,9 +32,9 @@ def load(k,d=None):
 
 if 'cfg' not in st.session_state: st.session_state.cfg={**DEFAULT,**(load('cfg',{}) or {})}
 if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
-if 'db' not in st.session_state: st.session_state.db=load('db')
-if 'pos' not in st.session_state: st.session_state.pos=load('pos')
-if 'eligible' not in st.session_state: st.session_state.eligible=load('eligible',[]) or []
+if 'db' not in st.session_state: st.session_state.db=firestore_load_db() or load('db')
+if 'pos' not in st.session_state: st.session_state.pos=firestore_load_pos() or load('pos')
+if 'eligible' not in st.session_state: st.session_state.eligible=firestore_load_eligible() or load('eligible',[]) or []
 if 'inventories' not in st.session_state: st.session_state.inventories=load('inventories',{}) or {}
 if 'cycles' not in st.session_state: st.session_state.cycles=load('cycles',{}) or {}
 if 'section' not in st.session_state: st.session_state.section='Dashboard'
@@ -52,6 +52,83 @@ def firebase_db():
                 return None
             firebase_admin.initialize_app(credentials.Certificate(sa))
         return firestore.client()
+    except Exception:
+        return None
+
+def _fs_delete_collection(db, name):
+    refs = list(db.collection(name).stream())
+    for i in range(0, len(refs), 450):
+        batch = db.batch()
+        for ref in refs[i:i+450]:
+            batch.delete(ref.reference)
+        batch.commit()
+
+def _fs_save_df(db, name, df, key_col=None):
+    if df is None:
+        return
+    _fs_delete_collection(db, name)
+    records = json.loads(df.to_json(orient='records', date_format='iso'))
+    batch = db.batch()
+    pending = 0
+    for idx, rec in enumerate(records):
+        if key_col and key_col in rec:
+            raw = str(rec.get(key_col) or '').strip()
+            doc_id = raw if raw else f'row_{idx}'
+        else:
+            doc_id = hashlib.sha1(json.dumps(rec, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+        doc_id = doc_id.replace('/', '_')
+        rec['_ordem'] = idx
+        batch.set(db.collection(name).document(doc_id), rec)
+        pending += 1
+        if pending >= 450:
+            batch.commit()
+            batch = db.batch()
+            pending = 0
+    if pending:
+        batch.commit()
+
+def _fs_load_df(db, name):
+    rows = [x.to_dict() for x in db.collection(name).stream()]
+    if not rows:
+        return None
+    rows.sort(key=lambda x: x.get('_ordem', 0))
+    for r in rows:
+        r.pop('_ordem', None)
+    return pd.DataFrame(rows)
+
+def _fs_save_eligible(db, values):
+    db.collection('estoque_config').document('enderecos').set({'enderecos': list(values or [])})
+
+def _fs_load_eligible(db):
+    snap = db.collection('estoque_config').document('enderecos').get()
+    if not snap.exists:
+        return None
+    return list((snap.to_dict() or {}).get('enderecos') or [])
+
+def firestore_load_db():
+    db = firebase_db()
+    if db is None:
+        return None
+    try:
+        return _fs_load_df(db, 'estoque_produtos')
+    except Exception:
+        return None
+
+def firestore_load_pos():
+    db = firebase_db()
+    if db is None:
+        return None
+    try:
+        return _fs_load_df(db, 'estoque_posicoes')
+    except Exception:
+        return None
+
+def firestore_load_eligible():
+    db = firebase_db()
+    if db is None:
+        return None
+    try:
+        return _fs_load_eligible(db)
     except Exception:
         return None
 
@@ -198,7 +275,27 @@ if not st.session_state.auth_user:
 
 def persist_cfg(): save('cfg',cfg)
 def persist_all(): save('inventories',st.session_state.inventories); save('cycles',st.session_state.cycles)
-def persist_db(): save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
+def persist_eligible():
+ db=firebase_db()
+ if db is not None:
+  try:
+   _fs_save_eligible(db,st.session_state.eligible)
+   return
+  except Exception:
+   pass
+ save('eligible',st.session_state.eligible)
+
+def persist_db():
+ db=firebase_db()
+ if db is not None:
+  try:
+   _fs_save_df(db,'estoque_produtos',st.session_state.db,'codigo')
+   _fs_save_df(db,'estoque_posicoes',st.session_state.pos,None)
+   _fs_save_eligible(db,st.session_state.eligible)
+   return
+  except Exception:
+   pass
+ save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)
 def persist_reports(): save('reports',st.session_state.reports)
 
 def excel_bytes(df, sheet_name):
@@ -539,7 +636,7 @@ elif active=='Banco de Dados':
    with cols[i%4]:
     v=st.checkbox(addr,value=addr in selected,key='address_'+str(abs(hash(addr))))
     if v!=(addr in selected):
-     selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_db()
+     selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_eligible()
   a,b=st.columns(2);a.metric('Endereços encontrados',len(addresses));b.metric('Endereços aptos',len(st.session_state.eligible))
   if st.button('PROCESSAR E ATUALIZAR BANCO',type='primary'):
    try:
