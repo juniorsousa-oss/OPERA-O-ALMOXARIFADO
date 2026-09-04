@@ -41,3 +41,4 @@ jobs:
           git add app.py
           git diff --cached --quiet || git commit -m "fix: initialize persistence helpers before state"
           git push
+# trigger
