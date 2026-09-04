@@ -1,5 +1,7 @@
 name: Fix login layout 2
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
@@ -23,7 +25,6 @@ jobs:
         ext=n.lower()
         mime='image/png' if ext.endswith('.png') else 'image/jpeg' if ext.endswith(('.jpg','.jpeg')) else 'image/webp' if ext.endswith('.webp') else 'image/svg+xml'
         login_logo='data:'+mime+';base64,'+base64.b64encode(b).decode()
-
     st.markdown("""
     <style>
     [data-testid="stHeader"]{background:transparent!important}
@@ -46,17 +47,14 @@ jobs:
     @media(max-width:640px){.login-shell{max-width:calc(100vw - 32px);margin-top:4vh}.login-card{padding:24px 20px}}
     </style>
     """,unsafe_allow_html=True)
-
     st.markdown('<div class="login-shell"><div class="login-card">',unsafe_allow_html=True)
     logo_html=(f'<div class="login-logo"><img src="{login_logo}"></div>' if login_logo else '<div class="login-logo"><div class="login-brand">Se<span>tt</span>a</div></div>')
     st.markdown(logo_html+'<div class="login-sub">SISTEMA OPERACIONAL DE ESTOQUE</div><div class="login-title">ACESSO AO SISTEMA</div>',unsafe_allow_html=True)
-
     with st.form('login_form'):
         email=st.text_input('E-mail',placeholder='seu e-mail')
         password=st.text_input('Senha',type='password',placeholder='Digite sua senha')
         submitted=st.form_submit_button('ENTRAR',type='primary',use_container_width=True,icon=':material/login:')
     st.markdown('<div class="login-note">Acesso autorizado somente para usuários cadastrados.</div></div></div>',unsafe_allow_html=True)
-
     if submitted:
         if not email or not password:
             st.error('Informe o e-mail e a senha.')
