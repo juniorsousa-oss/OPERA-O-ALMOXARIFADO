@@ -16,4 +16,6 @@
 
 ## Persistência em nuvem
 
-O SQLite resolve a perda causada por reexecuções/navegação dentro do mesmo ambiente. O Streamlit Community Cloud pode recriar o ambiente em reinícios/redeploys; para persistência definitiva em nuvem, conectar o projeto ao Supabase/PostgreSQL é a próxima etapa.
+A base principal de estoque utiliza Firestore para persistência em nuvem. O SQLite permanece apenas como fallback local para dados legados enquanto a migração das demais estruturas é realizada.
+
+<!-- deploy sync 2026-09-04 -->
