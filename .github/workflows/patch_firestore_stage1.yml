@@ -1,0 +1,43 @@
+name: Patch Firestore persistence stage 1
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app.py')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('import os, io, json, base64, pickle, sqlite3, uuid', 'import os, io, json, base64, pickle, sqlite3, uuid, hashlib')
+          marker = "        return firestore.client()\n    except Exception:\n        return None\n\ndef load_user_profile():"
+          insert = '''        return firestore.client()\n    except Exception:\n        return None\n\ndef _fs_delete_collection(db, name):\n    refs = list(db.collection(name).stream())\n    for i in range(0, len(refs), 450):\n        batch = db.batch()\n        for ref in refs[i:i+450]:\n            batch.delete(ref.reference)\n        batch.commit()\n\ndef _fs_save_df(db, name, df, key_col=None):\n    if df is None:\n        return\n    _fs_delete_collection(db, name)\n    records = json.loads(df.to_json(orient='records', date_format='iso'))\n    batch = db.batch()\n    pending = 0\n    for idx, rec in enumerate(records):\n        if key_col and key_col in rec:\n            raw = str(rec.get(key_col) or '').strip()\n            doc_id = raw if raw else f'row_{idx}'\n        else:\n            doc_id = hashlib.sha1(json.dumps(rec, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()\n        doc_id = doc_id.replace('/', '_')\n        rec['_ordem'] = idx\n        batch.set(db.collection(name).document(doc_id), rec)\n        pending += 1\n        if pending >= 450:\n            batch.commit()\n            batch = db.batch()\n            pending = 0\n    if pending:\n        batch.commit()\n\ndef _fs_load_df(db, name):\n    rows = [x.to_dict() for x in db.collection(name).stream()]\n    if not rows:\n        return None\n    rows.sort(key=lambda x: x.get('_ordem', 0))\n    for r in rows:\n        r.pop('_ordem', None)\n    return pd.DataFrame(rows)\n\ndef _fs_save_eligible(db, values):\n    db.collection('estoque_config').document('enderecos').set({'enderecos': list(values or [])})\n\ndef _fs_load_eligible(db):\n    snap = db.collection('estoque_config').document('enderecos').get()\n    if not snap.exists:\n        return None\n    return list((snap.to_dict() or {}).get('enderecos') or [])\n\ndef firestore_load_db():\n    db = firebase_db()\n    if db is None:\n        return None\n    try:\n        return _fs_load_df(db, 'estoque_produtos')\n    except Exception:\n        return None\n\ndef firestore_load_pos():\n    db = firebase_db()\n    if db is None:\n        return None\n    try:\n        return _fs_load_df(db, 'estoque_posicoes')\n    except Exception:\n        return None\n\ndef firestore_load_eligible():\n    db = firebase_db()\n    if db is None:\n        return None\n    try:\n        return _fs_load_eligible(db)\n    except Exception:\n        return None\n\ndef load_user_profile():'''
+          if marker not in s:
+              raise SystemExit('marker for Firestore helpers not found')
+          s = s.replace(marker, insert, 1)
+          s = s.replace("if 'db' not in st.session_state: st.session_state.db=load('db')", "if 'db' not in st.session_state: st.session_state.db=firestore_load_db() or load('db')")
+          s = s.replace("if 'pos' not in st.session_state: st.session_state.pos=load('pos')", "if 'pos' not in st.session_state: st.session_state.pos=firestore_load_pos() or load('pos')")
+          s = s.replace("if 'eligible' not in st.session_state: st.session_state.eligible=load('eligible',[]) or []", "if 'eligible' not in st.session_state: st.session_state.eligible=firestore_load_eligible() or load('eligible',[]) or []")
+          old = "def persist_db(): save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)"
+          new = '''def persist_eligible():\n db=firebase_db()\n if db is not None:\n  try:\n   _fs_save_eligible(db,st.session_state.eligible)\n   return\n  except Exception:\n   pass\n save('eligible',st.session_state.eligible)\n\ndef persist_db():\n db=firebase_db()\n if db is not None:\n  try:\n   _fs_save_df(db,'estoque_produtos',st.session_state.db,'codigo')\n   _fs_save_df(db,'estoque_posicoes',st.session_state.pos,None)\n   _fs_save_eligible(db,st.session_state.eligible)\n   return\n  except Exception:\n   pass\n save('db',st.session_state.db); save('pos',st.session_state.pos); save('eligible',st.session_state.eligible)'''
+          if old not in s:
+              raise SystemExit('persist_db block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace("selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_db()", "selected.add(addr) if v else selected.discard(addr);st.session_state.eligible=sorted(selected);persist_eligible()")
+          p.write_text(s, encoding='utf-8')
+          print('patched', p)
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py
+          git diff --cached --quiet || git commit -m "feat: persist stock base in Firestore"
+          git push
