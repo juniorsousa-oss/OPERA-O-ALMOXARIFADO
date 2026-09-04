@@ -136,9 +136,10 @@ def render_login():
             data,err=auth_login(email,password)
             if err: st.error(err)
             else:
-                st.session_state.auth_user=data.get('user',{})
-                st.session_state.auth_access_token=data.get('access_token','')
-                st.session_state.auth_refresh_token=data.get('refresh_token','')
+                # Firebase REST returns idToken/localId directly; there is no nested 'user' object.
+                st.session_state.auth_user={'email': data.get('email', email), 'localId': data.get('localId','')}
+                st.session_state.auth_access_token=data.get('idToken','')
+                st.session_state.auth_refresh_token=data.get('refreshToken','')
                 st.rerun()
     st.markdown('<div class="login-footer">Acesso autorizado somente para usuários cadastrados.</div>',unsafe_allow_html=True)
 
