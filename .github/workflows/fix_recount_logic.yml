@@ -30,13 +30,9 @@ jobs:
      if abs(diff(r,q))<1e-9:
       r['contagem_final']=q;r['resultado_final']='SISTEMA CONFIRMADO';r['status']='FINALIZADO'
     persist_inv(inv)
-
     divs=[r for r in inv['rows'] if r['contagens'] and r['status'] not in ('FINALIZADO','RECONTAR','AUDITORIA') and abs(diff(r,last(r)))>1e-9]
-    decided=[r for r in inv['rows'] if r['contagens'] and r['status'] in ('RECONTAR','AUDITORIA') and abs(diff(r,last(r)))>1e-9]
-
-    if not divs and not decided:
+    if not divs and not any(r['status'] in ('RECONTAR','AUDITORIA') for r in inv['rows']):
      st.success('Não existem divergências na 1ª contagem. Todos os itens foram confirmados pelo sistema.')
-
     for r in divs:
      with st.container(border=True):
       q=last(r);a,b,c,d=st.columns(4);a.markdown(f'**{r["codigo"]} / {r["endereco"]}**');b.metric('Sistema',fn(r['qtd_sistema']));c.metric('1ª contagem',fn(q));d.metric('Divergência',signed_brl(divergencia_valor(r,q)));st.caption(f'Divergência de quantidade: {diff(r,q):+,.3f}'.replace(',','X').replace('.',',').replace('X','.')+f' · Classificação: {sev(abs(divergencia_valor(r,q)))} · Comentário: {r["contagens"][-1]["comentario"]}')
@@ -47,17 +43,12 @@ jobs:
        r['status']='AUDITORIA';persist_inv(inv);st.rerun()
       if z.button('ENCERRAR ESTE ITEM',key='e1_'+r['id']):
        r['contagem_final']=q;r['resultado_final']='ENCERRADO PELO GESTOR';r['status']='FINALIZADO';persist_inv(inv);st.rerun()
-
-    # Somente depois que TODOS os divergentes tiverem uma decisão,
-    # libera a execução para o operador. Nunca liberar item isoladamente.
     all_divs=[r for r in inv['rows'] if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9]
     pending_decision=[r for r in all_divs if r['status'] not in ('RECONTAR','AUDITORIA')]
     if all_divs and not pending_decision:
-     inv['status']='AGUARDANDO EXECUÇÃO';persist_inv(inv)
-     st.success('Todos os itens divergentes receberam uma decisão. As ações foram liberadas para execução.')
+     inv['status']='AGUARDANDO EXECUÇÃO';persist_inv(inv);st.success('Todos os itens divergentes receberam uma decisão. As ações foram liberadas para execução.')
     elif all_divs and pending_decision:
      st.info(f'Aguardando decisão do gestor para {len(pending_decision)} item(ns). Nenhuma recontagem ou auditoria será enviada ao operador enquanto houver item sem decisão.')
-
     x,y,z=st.columns(3)
     if x.button('RECONTAR TODOS OS DIVERGENTES',type='primary',use_container_width=True):
      for r in inv['rows']:
@@ -68,7 +59,6 @@ jobs:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO EXECUÇÃO';persist_inv(inv);st.rerun()
     if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
-
    elif prof=='Operador' and inv['status']=='AGUARDANDO EXECUÇÃO':
     st.markdown('#### Execução — itens liberados pelo gestor')
     targets=[r for r in inv['rows'] if r['status'] in ('RECONTAR','AUDITORIA')]
@@ -79,22 +69,15 @@ jobs:
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(r['descricao']);st.caption('Histórico: '+' → '.join(f"{x['etapa']}: {fn(x['quantidade'])}" for x in r['contagens']));q=st.number_input('Nova contagem',0.0,step=.001,format='%.3f',key='qexec_'+r['id']);cm=st.text_input('Comentário (opcional)',key='cmexec_'+r['id'])
       if st.button('Salvar '+acao,key='svexec_'+r['id'],type='primary'):
-       etapa='RECONTAGEM' if r['status']=='RECONTAR' else 'AUDITORIA'
-       addcount(r,q,cm,etapa)
-       r['status']='RECONTADA' if r['status']=='RECONTAR' else 'AUDITADA'
-       persist_inv(inv);st.rerun()
+       etapa='RECONTAGEM' if r['status']=='RECONTAR' else 'AUDITORIA';addcount(r,q,cm,etapa);r['status']='RECONTADA' if r['status']=='RECONTAR' else 'AUDITADA';persist_inv(inv);st.rerun()
     if not any(r['status'] in ('RECONTAR','AUDITORIA') for r in inv['rows']):
      inv['status']='AGUARDANDO DECISÃO';persist_inv(inv);st.rerun()
-
    elif prof=='Gestor' and inv['status']=='AGUARDANDO DECISÃO':
     st.markdown('#### Avaliação após cada recontagem/auditoria')
-    # Cada posição é avaliada usando SOMENTE o seu próprio histórico.
-    # A comparação com a contagem anterior nunca usa dados de outro item.
     candidates=[r for r in inv['rows'] if r['contagens'] and r['status'] in ('RECONTADA','AUDITADA')]
     if not candidates: st.success('Não existem itens pendentes de decisão.')
     for r in candidates:
-     q_atual=last(r)
-     q_anterior=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
+     q_atual=last(r);q_anterior=r['contagens'][-2]['quantidade'] if len(r['contagens'])>=2 else None
      with st.container(border=True):
       st.markdown(f'**{r["codigo"]} / {r["endereco"]}**');st.write(f'Sistema: **{fn(r["qtd_sistema"])}** · Contagem anterior: **{fn(q_anterior) if q_anterior is not None else "—"}** · Nova contagem: **{fn(q_atual)}**')
       if q_anterior is not None and abs(q_atual-q_anterior)<1e-9:
@@ -116,9 +99,8 @@ jobs:
       if r['contagens'] and r['status']!='FINALIZADO' and abs(diff(r,last(r)))>1e-9:r['status']='AUDITORIA'
      inv['status']='AGUARDANDO EXECUÇÃO';persist_inv(inv);st.rerun()
     if z.button('ENCERRAR INVENTÁRIO',type='primary',use_container_width=True):close_inv(inv);st.rerun()
-
    elif prof=='Gestor' and inv['status']=='AGUARDANDO EXECUÇÃO':
-    st.info('Há ações de recontagem/auditoria liberadas. O gestor deve executar os itens definidos antes de nova análise.')
+    st.info('Há ações de recontagem/auditoria liberadas para execução.')
 '''
           p.write_text(s[:start] + new + s[end:], encoding='utf-8')
           PY
