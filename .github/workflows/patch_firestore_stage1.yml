@@ -41,3 +41,4 @@ jobs:
           git add app.py
           git diff --cached --quiet || git commit -m "feat: persist stock base in Firestore"
           git push
+# trigger
