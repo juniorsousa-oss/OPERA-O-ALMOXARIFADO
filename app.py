@@ -5,7 +5,7 @@ from urllib.error import HTTPError, URLError
 import pandas as pd
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth as firebase_auth
 
 st.set_page_config(page_title='Gestão Almoxarifado | Inventário Rotativo', page_icon='📦', layout='wide', initial_sidebar_state='expanded')
 DATA=os.path.join(os.path.dirname(__file__),'inventario_operacional.sqlite3')
@@ -63,6 +63,10 @@ def load_user_profile():
     db = firebase_db()
     if db is None: return 'Operador'
     try:
+        bootstrap = str(st.secrets.get('FIREBASE_BOOTSTRAP_ADMIN_EMAIL','')).strip().lower()
+        if bootstrap and email and email == bootstrap:
+            db.collection('usuarios').document(uid).set({'email':email,'nome':email.split('@')[0],'perfil':'ADMIN','ativo':True,'atualizado_em':firestore.SERVER_TIMESTAMP}, merge=True)
+            return 'Admin'
         ref=db.collection('usuarios').document(uid)
         snap=ref.get()
         if snap.exists:
@@ -325,7 +329,8 @@ with st.sidebar:
  else:st.markdown('<div class="logo-area"><div style="color:var(--muted);text-align:center;font-size:11px">LOGO DA EMPRESA<br>Configure em Configurações.</div></div>',unsafe_allow_html=True)
  st.markdown(f'<div class="sidebar-sub">{config["sidebar_subtitle"]}</div>',unsafe_allow_html=True);st.markdown(f'<div class="menu-label">{config["menu_label"]}</div>',unsafe_allow_html=True)
  nav=[('Dashboard',config["dashboard_label"],':material/dashboard:'),('Inventário Rotativo',config["inventory_label"],':material/inventory_2:'),('Banco de Dados',config["database_label"],':material/database:'),('Registro',config["register_label"],':material/history:'),('Configurações',config["settings_label"],':material/settings:')]
- tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top']}
+ if st.session_state.profile=='Admin': nav.insert(4,('Usuários','USUÁRIOS',':material/manage_accounts:'))
+ tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top'],'Usuários':0}
  for k,l,ic in nav:
   off=tops.get(k,0)
   st.markdown(f'<div style="height:0;margin-top:{off}px"></div>',unsafe_allow_html=True)
@@ -603,6 +608,55 @@ elif active=='Reportar Inconsistências':
      st.caption(f'Criado em {r["criado_em"]} · Encerrado em {r.get("encerrado_em") or "—"} · Equipe: {r["equipe"]}')
      st.write(f'**OBSERVAÇÃO:** {r["observacao"]}')
      st.success(f'TRATADO NO INVENTÁRIO: {r.get("inventario_doc") or "—"}')
+
+# User administration
+elif active=='Usuários' and st.session_state.profile=='Admin':
+ st.subheader('Usuários');st.caption('Cadastro e controle de acesso dos usuários do sistema.')
+ db_admin=firebase_db()
+ if db_admin is None:
+  st.error('Não foi possível acessar o Firestore. Verifique os Secrets do Firebase Admin.')
+ else:
+  with st.expander('NOVO USUÁRIO',True):
+   with st.form('new_user_form'):
+    c1,c2=st.columns(2)
+    with c1: new_email=st.text_input('E-mail',placeholder='usuario@empresa.com')
+    with c2: new_name=st.text_input('Nome',placeholder='Nome do usuário')
+    c3,c4=st.columns(2)
+    with c3: new_password=st.text_input('Senha inicial',type='password',placeholder='mínimo 6 caracteres')
+    with c4: new_role=st.selectbox('Perfil',['OPERADOR','GESTOR','ADMIN'])
+    create_user=st.form_submit_button('CRIAR USUÁRIO',type='primary',icon=':material/person_add:')
+   if create_user:
+    em=(new_email or '').strip().lower(); nm=(new_name or '').strip()
+    try:
+     if not em or not new_password or len(new_password)<6: st.error('Informe e-mail e senha com pelo menos 6 caracteres.')
+     else:
+      u=firebase_auth.create_user(email=em,password=new_password,display_name=nm or em.split('@')[0])
+      db_admin.collection('usuarios').document(u.uid).set({'email':em,'nome':nm or em.split('@')[0],'perfil':new_role,'ativo':True,'criado_em':firestore.SERVER_TIMESTAMP})
+      st.success('Usuário criado com sucesso.'); st.rerun()
+    except Exception as e:
+     msg=str(e)
+     if 'EMAIL_EXISTS' in msg or 'already exists' in msg.lower(): msg='Este e-mail já está cadastrado.'
+     st.error('Não foi possível criar o usuário: '+msg)
+  st.markdown('### USUÁRIOS CADASTRADOS')
+  try:
+   users=list(firebase_auth.list_users().iterate_all())
+  except Exception as e:
+   st.error('Não foi possível listar os usuários: '+str(e)); users=[]
+  for u in users:
+   snap=db_admin.collection('usuarios').document(u.uid).get(); d=snap.to_dict() if snap.exists else {}
+   with st.container(border=True):
+    a,b,c,dcol=st.columns([2.3,1.4,1.1,1.0])
+    with a: st.write('**'+(d.get('nome') or u.display_name or 'Sem nome')+'**'); st.caption(u.email or '')
+    roles=['OPERADOR','GESTOR','ADMIN']; current=str(d.get('perfil','OPERADOR')).upper(); current=current if current in roles else 'OPERADOR'
+    with b: role=st.selectbox('Perfil',roles,index=roles.index(current),key='role_'+u.uid)
+    with c: active_user=st.checkbox('Ativo',value=not u.disabled,key='active_'+u.uid)
+    with dcol:
+     if st.button('SALVAR',key='save_'+u.uid,icon=':material/save:'):
+      try:
+       firebase_auth.update_user(u.uid,disabled=not active_user)
+       db_admin.collection('usuarios').document(u.uid).set({'perfil':role,'ativo':active_user,'email':u.email or '','nome':d.get('nome') or u.display_name or '','atualizado_em':firestore.SERVER_TIMESTAMP},merge=True)
+       st.success('Atualizado.'); st.rerun()
+      except Exception as e: st.error('Erro ao atualizar: '+str(e))
 
 # Settings
 elif active=='Configurações':
