@@ -90,7 +90,12 @@ def auth_logout():
     st.rerun()
 
 def render_login():
-    login_logo = logo_uri()
+    b,n = st.session_state.logo
+    login_logo = None
+    if b:
+        ext=n.lower()
+        mime='image/png' if ext.endswith('.png') else 'image/jpeg' if ext.endswith(('.jpg','.jpeg')) else 'image/webp' if ext.endswith('.webp') else 'image/svg+xml'
+        login_logo='data:'+mime+';base64,'+base64.b64encode(b).decode()
     st.markdown('''<style>
     [data-testid="stHeader"]{background:transparent!important}
     .login-wrap{min-height:0!important;display:flex;align-items:flex-start;justify-content:center;padding-top:12px;margin-bottom:0}
