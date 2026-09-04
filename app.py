@@ -30,21 +30,7 @@ def load(k,d=None):
  try:return pickle.loads(r[0])
  except:return d
 
-if 'cfg' not in st.session_state: st.session_state.cfg={**DEFAULT,**(load('cfg',{}) or {})}
-if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
-if 'db' not in st.session_state:
- _fsdb=firestore_load_db(); st.session_state.db=_fsdb if _fsdb is not None else load('db')
-if 'pos' not in st.session_state:
- _fspos=firestore_load_pos(); st.session_state.pos=_fspos if _fspos is not None else load('pos')
-if 'eligible' not in st.session_state:
- _fselig=firestore_load_eligible(); st.session_state.eligible=_fselig if _fselig is not None else (load('eligible',[]) or [])
-if 'inventories' not in st.session_state: st.session_state.inventories=load('inventories',{}) or {}
-if 'cycles' not in st.session_state: st.session_state.cycles=load('cycles',{}) or {}
-if 'section' not in st.session_state: st.session_state.section='Dashboard'
-if 'selected' not in st.session_state: st.session_state.selected=None
-if 'new_inv' not in st.session_state: st.session_state.new_inv=False
-if 'profile' not in st.session_state: st.session_state.profile='Operador'
-if 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}
+
 
 # Firebase Admin / Firestore: server-side access using Streamlit Secrets.
 def firebase_db():
@@ -166,6 +152,22 @@ def load_user_profile():
         return 'Operador'
     except Exception:
         return 'Operador'
+
+if 'cfg' not in st.session_state: st.session_state.cfg={**DEFAULT,**(load('cfg',{}) or {})}
+if 'logo' not in st.session_state: st.session_state.logo=load('logo',(None,''))
+if 'db' not in st.session_state:
+ _fsdb=firestore_load_db(); st.session_state.db=_fsdb if _fsdb is not None else load('db')
+if 'pos' not in st.session_state:
+ _fspos=firestore_load_pos(); st.session_state.pos=_fspos if _fspos is not None else load('pos')
+if 'eligible' not in st.session_state:
+ _fselig=firestore_load_eligible(); st.session_state.eligible=_fselig if _fselig is not None else (load('eligible',[]) or [])
+if 'inventories' not in st.session_state: st.session_state.inventories=load('inventories',{}) or {}
+if 'cycles' not in st.session_state: st.session_state.cycles=load('cycles',{}) or {}
+if 'section' not in st.session_state: st.session_state.section='Dashboard'
+if 'selected' not in st.session_state: st.session_state.selected=None
+if 'new_inv' not in st.session_state: st.session_state.new_inv=False
+if 'profile' not in st.session_state: st.session_state.profile='Operador'
+if 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}
 
 st.session_state.profile=load_user_profile()
 cfg=st.session_state.cfg
