@@ -1,0 +1,39 @@
+name: integrate-firebase-admin
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'Integrate Firebase Admin'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.py')
+          s=p.read_text(encoding='utf-8')
+          old="import pandas as pd\nimport streamlit as st\n"
+          new="import pandas as pd\nimport streamlit as st\nimport firebase_admin\nfrom firebase_admin import credentials, firestore\n"
+          if old not in s: raise SystemExit('IMPORT_MARKER_NOT_FOUND')
+          s=s.replace(old,new,1)
+          old="if 'profile' not in st.session_state: st.session_state.profile='Operador'\nif 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}\n"
+          new="if 'profile' not in st.session_state: st.session_state.profile='Operador'\nif 'reports' not in st.session_state: st.session_state.reports=load('reports',{}) or {}\n\n# Firebase Admin / Firestore: server-side access using Streamlit Secrets.\ndef firebase_db():\n    try:\n        if not firebase_admin._apps:\n            sa = dict(st.secrets.get('firebase_admin', {}))\n            if not sa.get('project_id') or not sa.get('private_key') or not sa.get('client_email'):\n                return None\n            firebase_admin.initialize_app(credentials.Certificate(sa))\n        return firestore.client()\n    except Exception:\n        return None\n\ndef load_user_profile():\n    user = st.session_state.get('auth_user') or {}\n    uid = user.get('localId','')\n    email = (user.get('email') or '').strip().lower()\n    if not uid: return 'Operador'\n    db = firebase_db()\n    if db is None: return 'Operador'\n    try:\n        ref=db.collection('usuarios').document(uid)\n        snap=ref.get()\n        if snap.exists:\n            data=snap.to_dict() or {}\n            if data.get('ativo') is False:\n                auth_logout()\n                return 'Operador'\n            perfil=str(data.get('perfil','OPERADOR')).upper()\n            return {'ADMIN':'Admin','GESTOR':'Gestor','OPERADOR':'Operador'}.get(perfil,'Operador')\n        ref.set({'email':email,'nome':email.split('@')[0] if email else 'Usuário','perfil':'OPERADOR','ativo':True,'criado_em':firestore.SERVER_TIMESTAMP})\n        return 'Operador'\n    except Exception:\n        return 'Operador'\n\n"
+          if old not in s: raise SystemExit('PROFILE_MARKER_NOT_FOUND')
+          s=s.replace(old,new,1)
+          old="cfg=st.session_state.cfg\nconfig=cfg\n"
+          new="st.session_state.profile=load_user_profile()\ncfg=st.session_state.cfg\nconfig=cfg\n"
+          if old not in s: raise SystemExit('CFG_MARKER_NOT_FOUND')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.py
+          git commit -m 'Integrate Firebase Admin' || exit 0
+          git push
