@@ -7,7 +7,6 @@ permissions:
   contents: write
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +20,6 @@ jobs:
           end = s.index("   elif prof=='Gestor' and inv['status']=='FECHADO':", start)
           new = '''   elif prof=='Gestor' and inv['status']=='AGUARDANDO ANÁLISE':
     st.markdown('#### Análise da 1ª contagem')
-    # Primeiro confirma automaticamente o que bate com o sistema.
-    # Divergências ficam pendentes até o gestor decidir TODOS os itens.
     for r in inv['rows']:
      if not r['contagens'] or r['status'] in ('FINALIZADO','RECONTAR','AUDITORIA'):
       continue
