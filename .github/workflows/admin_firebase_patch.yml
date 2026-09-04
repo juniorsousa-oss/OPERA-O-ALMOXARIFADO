@@ -1,0 +1,120 @@
+name: Firebase admin user management patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app.py')
+          s = p.read_text(encoding='utf-8')
+
+          s = s.replace('from firebase_admin import credentials, firestore', 'from firebase_admin import credentials, firestore, auth as firebase_auth')
+
+          old = """    db = firebase_db()\n    if db is None: return 'Operador'\n    try:\n        ref=db.collection('usuarios').document(uid)\n"""
+          new = """    db = firebase_db()\n    if db is None: return 'Operador'\n    try:\n        bootstrap = str(st.secrets.get('FIREBASE_BOOTSTRAP_ADMIN_EMAIL','')).strip().lower()\n        if bootstrap and email and email == bootstrap:\n            db.collection('usuarios').document(uid).set({\n                'email': email, 'nome': email.split('@')[0], 'perfil': 'ADMIN', 'ativo': True,\n                'atualizado_em': firestore.SERVER_TIMESTAMP\n            }, merge=True)\n            return 'Admin'\n        ref=db.collection('usuarios').document(uid)\n"""
+          if old not in s:
+              raise SystemExit('bootstrap anchor not found')
+          s=s.replace(old,new,1)
+
+          old_nav = """nav=[('Dashboard',config[\\\"dashboard_label\\\"],':material/dashboard:'),('Inventário Rotativo',config[\\\"inventory_label\\\"],':material/inventory_2:'),('Banco de Dados',config[\\\"database_label\\\"],':material/database:'),('Registro',config[\\\"register_label\\\"],':material/history:'),('Configurações',config[\\\"settings_label\\\"],':material/settings:')]\n tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top']}\n"""
+          new_nav = """nav=[('Dashboard',config[\\\"dashboard_label\\\"],':material/dashboard:'),('Inventário Rotativo',config[\\\"inventory_label\\\"],':material/inventory_2:'),('Banco de Dados',config[\\\"database_label\\\"],':material/database:'),('Registro',config[\\\"register_label\\\"],':material/history:'),('Configurações',config[\\\"settings_label\\\"],':material/settings:')]\n if st.session_state.profile=='Admin':\n  nav.insert(4,('Usuários','USUÁRIOS',':material/manage_accounts:'))\n tops={'Dashboard':cfg['dash_top'],'Inventário Rotativo':cfg['inv_top'],'Banco de Dados':cfg['db_top'],'Registro':cfg['reg_top'],'Configurações':cfg['settings_top'],'Usuários':0}\n"""
+          if old_nav not in s:
+              raise SystemExit('nav anchor not found')
+          s=s.replace(old_nav,new_nav,1)
+
+          marker = """# Settings\nelif active=='Configurações':\n"""
+          block = r'''# User administration
+elif active=='Usuários' and st.session_state.profile=='Admin':
+ st.subheader('Usuários');st.caption('Cadastro e controle de acesso dos usuários do sistema.')
+ db_admin=firebase_db()
+ if db_admin is None:
+  st.error('Não foi possível acessar o Firestore. Verifique os Secrets do Firebase Admin.')
+ else:
+  with st.expander('NOVO USUÁRIO',True):
+   with st.form('new_user_form'):
+    c1,c2=st.columns(2)
+    with c1: new_email=st.text_input('E-mail',placeholder='usuario@empresa.com')
+    with c2: new_name=st.text_input('Nome',placeholder='Nome do usuário')
+    c3,c4=st.columns(2)
+    with c3: new_password=st.text_input('Senha inicial',type='password',placeholder='mínimo 6 caracteres')
+    with c4: new_role=st.selectbox('Perfil',['OPERADOR','GESTOR','ADMIN'])
+    create_user=st.form_submit_button('CRIAR USUÁRIO',type='primary',icon=':material/person_add:')
+   if create_user:
+    em=(new_email or '').strip().lower()
+    nm=(new_name or '').strip()
+    try:
+     if not em or not new_password or len(new_password)<6:
+      st.error('Informe e-mail e senha com pelo menos 6 caracteres.')
+     else:
+      u=firebase_auth.create_user(email=em,password=new_password,display_name=nm or em.split('@')[0])
+      db_admin.collection('usuarios').document(u.uid).set({'email':em,'nome':nm or em.split('@')[0],'perfil':new_role,'ativo':True,'criado_em':firestore.SERVER_TIMESTAMP})
+      st.success('Usuário criado com sucesso.')
+      st.rerun()
+    except Exception as e:
+     msg=str(e)
+     if 'EMAIL_EXISTS' in msg or 'already exists' in msg.lower(): msg='Este e-mail já está cadastrado.'
+     st.error('Não foi possível criar o usuário: '+msg)
+
+  st.markdown('### USUÁRIOS CADASTRADOS')
+  rows=[]
+  try:
+   for u in firebase_auth.list_users().iterate_all():
+    snap=db_admin.collection('usuarios').document(u.uid).get()
+    d=snap.to_dict() if snap.exists else {}
+    rows.append({'uid':u.uid,'email':u.email or d.get('email',''),'nome':d.get('nome') or u.display_name or '', 'perfil':str(d.get('perfil','OPERADOR')).upper(), 'ativo':not u.disabled})
+  except Exception as e:
+   st.error('Não foi possível listar os usuários: '+str(e)); rows=[]
+  if rows:
+   for r in rows:
+    with st.container(border=True):
+     a,b,c,d=st.columns([2.3,1.4,1.1,1.0])
+     with a:
+      st.write('**'+(r['nome'] or 'Sem nome')+'**')
+      st.caption(r['email'])
+     with b:
+      role=st.selectbox('Perfil', ['OPERADOR','GESTOR','ADMIN'], index=['OPERADOR','GESTOR','ADMIN'].index(r['perfil']) if r['perfil'] in ['OPERADOR','GESTOR','ADMIN'] else 0, key='role_'+r['uid'])
+     with c:
+      active_user=st.checkbox('Ativo',value=r['ativo'],key='active_'+r['uid'])
+     with d:
+      if st.button('SALVAR',key='save_'+r['uid'],icon=':material/save:'):
+       try:
+        firebase_auth.update_user(r['uid'],disabled=not active_user)
+        db_admin.collection('usuarios').document(r['uid']).set({'perfil':role,'ativo':active_user,'email':r['email'],'nome':r['nome'],'atualizado_em':firestore.SERVER_TIMESTAMP},merge=True)
+        st.success('Atualizado.'); st.rerun()
+       except Exception as e: st.error('Erro ao atualizar: '+str(e))
+  else:
+   st.info('Nenhum usuário encontrado.')
+
+# Settings
+elif active=='Configurações':
+'''
+          if marker not in s:
+              raise SystemExit('settings marker not found')
+          s=s.replace(marker,block,1)
+
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit patched app
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py
+          git diff --cached --quiet || git commit -m "feat: add Firebase admin user management"
+          git push
+      - name: Remove patch workflow
+        run: |
+          rm -f .github/workflows/admin_firebase_patch.yml
+          git add .github/workflows/admin_firebase_patch.yml
+          git commit -m "chore: remove temporary Firebase patch workflow" || true
+          git push || true
