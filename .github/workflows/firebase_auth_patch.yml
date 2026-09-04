@@ -1,28 +1,9 @@
-name: Apply Firebase Auth Migration
+name: Temporary Firebase Auth Migration (disabled)
 on:
-  push:
-    branches: [main]
-permissions:
-  contents: write
+  workflow_dispatch:
+
 jobs:
-  patch:
+  disabled:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-      - name: Apply migration
-        run: |
-          python .github/firebase_auth_patch.py
-          python -m py_compile app.py
-      - name: Commit migration
-        run: |
-          if git diff --quiet -- app.py; then exit 0; fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app.py
-          git commit -m 'feat: use firebase authentication [skip ci]'
-          git push
+      - run: echo "Temporary migration completed; workflow intentionally disabled."
